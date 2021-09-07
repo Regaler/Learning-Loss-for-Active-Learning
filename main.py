@@ -34,7 +34,7 @@ from tqdm import tqdm
 # Custom
 import models.resnet as resnet
 import models.lossnet as lossnet
-from config import *
+import config as cf
 from data.sampler import SubsetSequentialSampler
 
 
@@ -71,19 +71,19 @@ if __name__ == '__main__':
     cifar10_test = CIFAR10('../cifar10', train=False,
                            download=True, transform=test_transform)
 
-    for trial in range(TRIALS):
+    for trial in range(cf.TRIALS):
         exp_dir = f"./result/cifar10/train/trial_{trial}"
         # Initialize a labeled dataset by randomly sampling K=ADDENDUM=1,000
         # data points from the entire dataset.
-        indices = list(range(NUM_TRAIN))
+        indices = list(range(cf.NUM_TRAIN))
         random.shuffle(indices)
-        labeled_set = indices[:ADDENDUM]
-        unlabeled_set = indices[ADDENDUM:]
+        labeled_set = indices[:cf.ADDENDUM]
+        unlabeled_set = indices[cf.ADDENDUM:]
 
-        train_loader = DataLoader(cifar10_train, batch_size=BATCH,
+        train_loader = DataLoader(cifar10_train, batch_size=cf.BATCH,
                                   sampler=SubsetRandomSampler(labeled_set),
                                   pin_memory=True)
-        test_loader = DataLoader(cifar10_test, batch_size=BATCH)
+        test_loader = DataLoader(cifar10_test, batch_size=cf.BATCH)
 
         resnet18 = resnet.ResNet18(num_classes=10).cuda()
         losspred = lossnet.LossNet().cuda()
@@ -91,7 +91,7 @@ if __name__ == '__main__':
         torch.backends.cudnn.benchmark = False
 
         # Active learning cycles
-        for cycle in range(CYCLES):
+        for cycle in range(cf.CYCLES):
             checkpoint_callback = ModelCheckpoint(monitor="val_acc",
                                                   save_last=True,
                                                   save_top_k=1,
@@ -99,7 +99,7 @@ if __name__ == '__main__':
             lr_callback = LearningRateMonitor(logging_interval='epoch')
             trainer = pl.Trainer(
                 gpus=torch.cuda.device_count(),
-                max_epochs=EPOCH,
+                max_epochs=cf.EPOCH,
                 accumulate_grad_batches=1,
                 sync_batchnorm=True,
                 default_root_dir=exp_dir,
@@ -113,12 +113,12 @@ if __name__ == '__main__':
             # via loss prediction-based uncertainty measurement
             # Randomly sample 10000 unlabeled data points
             random.shuffle(unlabeled_set)
-            subset = unlabeled_set[:SUBSET]
+            subset = unlabeled_set[:cf.SUBSET]
 
             # Create unlabeled dataloader for the unlabeled subset
             # more convenient if we maintain the order of subset for Sampler
             unlabeled_loader = DataLoader(cifar10_unlabeled,
-                                          batch_size=BATCH,
+                                          batch_size=cf.BATCH,
                                           sampler=SubsetSequentialSampler(subset),
                                           pin_memory=True)
 
@@ -127,11 +127,11 @@ if __name__ == '__main__':
             arg = np.argsort(uncertainty)
 
             # Update the labeled dataset and the unlabeled dataset, respectively
-            labeled_set += list(torch.tensor(subset)[arg][-ADDENDUM:].numpy())
-            unlabeled_set = list(torch.tensor(subset)[arg][:-ADDENDUM].numpy()) + unlabeled_set[SUBSET:]
+            labeled_set += list(torch.tensor(subset)[arg][-cf.ADDENDUM:].numpy())
+            unlabeled_set = list(torch.tensor(subset)[arg][:-cf.ADDENDUM].numpy()) + unlabeled_set[SUBSET:]
 
             # Create a new dataloader for the updated labeled dataset
-            train_loader = DataLoader(cifar10_train, batch_size=BATCH,
+            train_loader = DataLoader(cifar10_train, batch_size=cf.BATCH,
                                       sampler=SubsetRandomSampler(labeled_set),
                                       pin_memory=True)
 
