@@ -30,6 +30,58 @@ def get_uncertainty(trainer, model, unlabeled_loader):
     return torch.cat(predictions, dim=0).squeeze().cpu()
 
 
+def query_unlabeled_samples(labeled_set, unlabeled_set, 
+                            unlabeled_dataset, trainer, model):
+    """
+    Get unlabeled samples to annotate for active learning
+    Randomly sample 10000 unlabeled data points, as there can be too many unlabeled
+    The get_uncertainty function measures the information of the unlabeled samples
+    As a result, the labeled set, unlabeled sets, and train_loader are updated
+
+    Parameters
+    ----------
+    labeled_set: list[int]
+        The indices of the labeled samples in the whole data pool
+    unlabeled_set: list[int]
+        The indices of the unlabeled samples in the whole data pool
+    unlabeled_dataset: torch.utils.data.Dataset
+        The actual unlabeled dataset object
+        Each sample in this dataset will be measure for uncertainty
+    trainer: pytorch_lightning.Trainer
+        The trainer to run inference
+    model: pytorch_lightning.LightningModule
+        The trained model
+
+    Returns
+    -------
+    labeled_set: list[int]
+        The updated indices of the labeled samples in the whole data pool
+    unlabeled_set: list[int]
+        The updated indices of the unlabeled samples in the whole data pool
+    train_loader: torch.utils.data.DataLoader
+        The updated train loader with some more annotated data
+    """
+    random.shuffle(unlabeled_set)
+    subset = unlabeled_set[:cf.SUBSET]
+    # Create unlabeled dataloader for the unlabeled subset
+    # more convenient if we maintain the order of subset for Sampler
+    unlabeled_loader = DataLoader(unlabeled_dataset,
+                                    batch_size=cf.BATCH,
+                                    sampler=SubsetSequentialSampler(subset),
+                                    pin_memory=True)
+    uncertainty = get_uncertainty(trainer, model, unlabeled_loader)
+    # Index in ascending order
+    arg = np.argsort(uncertainty)
+    # Update the labeled dataset and the unlabeled dataset, respectively
+    labeled_set += list(torch.tensor(subset)[arg][-cf.ADDENDUM:].numpy())
+    unlabeled_set = list(torch.tensor(subset)[arg][:-cf.ADDENDUM].numpy()) + unlabeled_set[cf.SUBSET:]
+    # Create a new dataloader for the updated labeled dataset
+    train_loader = DataLoader(cifar10_train, batch_size=cf.BATCH,
+                            sampler=SubsetRandomSampler(labeled_set),
+                            pin_memory=True)
+    return labeled_set, unlabeled_set, train_loader
+
+
 if __name__ == '__main__':
     # Seed
     random.seed("Minuk Ma")
@@ -75,28 +127,12 @@ if __name__ == '__main__':
             )
             trainer.fit(model, train_loader, test_loader)
             trainer.test(model, test_loader)
-
-            # Update the labeled set via loss prediction-based uncertainty
-            # Randomly sample 10000 unlabeled data points
-            random.shuffle(unlabeled_set)
-            subset = unlabeled_set[:cf.SUBSET]
-
-            # Create unlabeled dataloader for the unlabeled subset
-            # more convenient if we maintain the order of subset for Sampler
-            unlabeled_loader = DataLoader(cifar10_unlabeled,
-                                          batch_size=cf.BATCH,
-                                          sampler=SubsetSequentialSampler(subset),
-                                          pin_memory=True)
-
-            uncertainty = get_uncertainty(trainer, model, unlabeled_loader)
-            # Index in ascending order
-            arg = np.argsort(uncertainty)
-
-            # Update the labeled dataset and the unlabeled dataset, respectively
-            labeled_set += list(torch.tensor(subset)[arg][-cf.ADDENDUM:].numpy())
-            unlabeled_set = list(torch.tensor(subset)[arg][:-cf.ADDENDUM].numpy()) + unlabeled_set[cf.SUBSET:]
-
-            # Create a new dataloader for the updated labeled dataset
-            train_loader = DataLoader(cifar10_train, batch_size=cf.BATCH,
-                                      sampler=SubsetRandomSampler(labeled_set),
-                                      pin_memory=True)
+            
+            # Annotate some unlabeled samples for active learning (AL)
+            labeled_set, unlabeled_set, train_loader = \
+                query_unlabeled_samples(
+                    labeled_set=labeled_set,
+                    unlabeled_set=unlabeled_set, 
+                    unlabeled_dataset=cifar10_unlabeled,
+                    trainer=trainer,
+                    model=model)
