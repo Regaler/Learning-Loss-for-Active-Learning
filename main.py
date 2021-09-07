@@ -49,7 +49,6 @@ if __name__ == '__main__':
     for trial in range(cf.TRIALS):
         exp_dir = f"./result/cifar10/train/trial_{trial}"
         # Initialize a labeled dataset by randomly sampling K=ADDENDUM=1,000
-        # data points from the entire dataset.
         indices = list(range(cf.NUM_TRAIN))
         random.shuffle(indices)
         labeled_set = indices[:cf.ADDENDUM]
@@ -59,7 +58,7 @@ if __name__ == '__main__':
                                   sampler=SubsetRandomSampler(labeled_set),
                                   pin_memory=True)
         test_loader = DataLoader(cifar10_test, batch_size=cf.BATCH)
-
+        # define model
         resnet18 = resnet.ResNet18(num_classes=10).cuda()
         losspred = lossnet.LossNet().cuda()
         model = ALFramework(resnet18, losspred)
@@ -84,8 +83,7 @@ if __name__ == '__main__':
             trainer.fit(model, train_loader, test_loader)
             trainer.test(model, test_loader)
 
-            # Update the labeled dataset 
-            # via loss prediction-based uncertainty measurement
+            # Update the labeled set via loss prediction-based uncertainty
             # Randomly sample 10000 unlabeled data points
             random.shuffle(unlabeled_set)
             subset = unlabeled_set[:cf.SUBSET]
@@ -103,17 +101,9 @@ if __name__ == '__main__':
 
             # Update the labeled dataset and the unlabeled dataset, respectively
             labeled_set += list(torch.tensor(subset)[arg][-cf.ADDENDUM:].numpy())
-            unlabeled_set = list(torch.tensor(subset)[arg][:-cf.ADDENDUM].numpy()) + unlabeled_set[SUBSET:]
+            unlabeled_set = list(torch.tensor(subset)[arg][:-cf.ADDENDUM].numpy()) + unlabeled_set[cf.SUBSET:]
 
             # Create a new dataloader for the updated labeled dataset
             train_loader = DataLoader(cifar10_train, batch_size=cf.BATCH,
                                       sampler=SubsetRandomSampler(labeled_set),
                                       pin_memory=True)
-
-        # Save a checkpoint
-        torch.save({
-                    'trial': trial + 1,
-                    'state_dict_backbone': model.backbone.state_dict(),
-                    'state_dict_losspred': model.losspred.state_dict()
-                },
-                f'{exp_dir}/resnet18.pth')
