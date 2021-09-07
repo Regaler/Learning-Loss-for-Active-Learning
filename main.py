@@ -7,20 +7,16 @@ Reference:
 '''
 
 # Python
-from models.al import ALFramework
 import random
+import numpy as np
 
 # Torch
 import torch
-import numpy as np
 from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
-
-# Torchvison
 import torchvision.transforms as T
-from torchvision.datasets import CIFAR100, CIFAR10
 
 # Custom
 import models.resnet as resnet
@@ -28,6 +24,7 @@ import models.lossnet as lossnet
 import config as cf
 from data.sampler import SubsetSequentialSampler
 from data.dataset import get_dataset
+from models.al import LL4AL
 
 
 def get_uncertainty(trainer, model, unlabeled_loader):
@@ -61,7 +58,7 @@ if __name__ == '__main__':
         # define model
         resnet18 = resnet.ResNet18(num_classes=10).cuda()
         losspred = lossnet.LossNet().cuda()
-        model = ALFramework(resnet18, losspred)
+        model = LL4AL(resnet18, losspred)
         torch.backends.cudnn.benchmark = False
 
         # Active learning cycles

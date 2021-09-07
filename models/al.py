@@ -27,7 +27,7 @@ def LossPredLoss(input, target, margin=1.0, reduction='mean'):
     return loss
 
 
-class ALFramework(pl.LightningModule):
+class LL4AL(pl.LightningModule):
     def __init__(self, backbone, losspred):
         super().__init__()
         self.backbone = backbone
