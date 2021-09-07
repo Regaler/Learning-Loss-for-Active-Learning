@@ -8,28 +8,19 @@ Reference:
 
 # Python
 from models.al import ALFramework
-import os
 import random
 
 # Torch
 import torch
 import numpy as np
-import torch.nn as nn
-import torch.optim as optim
 from torch.utils.data import DataLoader
-import torch.optim.lr_scheduler as lr_scheduler
 from torch.utils.data.sampler import SubsetRandomSampler
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 
 # Torchvison
 import torchvision.transforms as T
-# import torchvision.models as models
 from torchvision.datasets import CIFAR100, CIFAR10
-
-# Utils
-import visdom
-from tqdm import tqdm
 
 # Custom
 import models.resnet as resnet
