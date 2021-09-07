@@ -2,3 +2,5 @@
 .pyc
 .vscode/settings.json
 *.pth
+result/*
+*/__pycache__/*
