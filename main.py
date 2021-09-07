@@ -82,6 +82,60 @@ def query_unlabeled_samples(labeled_set, unlabeled_set,
     return labeled_set, unlabeled_set, train_loader
 
 
+def run_AL_experiment(labeled_set, unlabeled_set, train_loader, test_loader, model):
+    """
+    Run typical AL experiment that gradually expands the dataset
+
+    Parameters
+    ----------
+    labeled_set: list[int]
+        The initial labeled samples that was selected randomly
+    unlabeled_set: list[int]
+        The initial unlabeled samples, which is complementary to the labeled set
+    train_loader: torch.utils.data.DataLoader
+        The data loader with the initial labeled trn set
+    test_loader: torch.utils.data.DataLoader
+        The data loader with the initial labeled test set
+    model: pytorch_lightning.LightningModule
+        The model used for AL
+
+    Returns
+    -------
+    list[float]
+        The performance by the active learning cycle
+        This is used to draw performance curve
+    """
+    result = []  # performance by cycle
+    for _ in range(cf.CYCLES):
+        checkpoint_callback = ModelCheckpoint(monitor="val_acc",
+                                              save_last=True,
+                                              save_top_k=1,
+                                              mode='max')
+        lr_callback = LearningRateMonitor(logging_interval='epoch')
+        trainer = pl.Trainer(
+            gpus=torch.cuda.device_count(),
+            max_epochs=cf.EPOCH,
+            accumulate_grad_batches=1,
+            sync_batchnorm=True,
+            default_root_dir=exp_dir,
+            callbacks=[checkpoint_callback,
+                        lr_callback]
+        )
+        trainer.fit(model, train_loader, test_loader)
+        res = trainer.test(model, test_loader)
+        result.append(res[0]["test_acc"])  # append float value
+        
+        # Annotate some unlabeled samples for active learning (AL)
+        labeled_set, unlabeled_set, train_loader = \
+            query_unlabeled_samples(
+                labeled_set=labeled_set,
+                unlabeled_set=unlabeled_set, 
+                unlabeled_dataset=cifar10_unlabeled,
+                trainer=trainer,
+                model=model)
+    return result[0]
+
+
 if __name__ == '__main__':
     # Seed
     random.seed("Minuk Ma")
@@ -93,6 +147,8 @@ if __name__ == '__main__':
     cifar10_unlabeled = get_dataset(name="CIFAR10", train=True, download=True, transform="test")
     cifar10_test = get_dataset(name="CIFAR10", train=False, download=True, transform="test")
 
+    # AL is sensitive to the choice of initial labeled set
+    # Therefore, do the experiment many times
     for trial in range(cf.TRIALS):
         exp_dir = f"./result/cifar10/train/trial_{trial}"
         # Initialize a labeled dataset by randomly sampling K=ADDENDUM=1,000
@@ -100,39 +156,13 @@ if __name__ == '__main__':
         random.shuffle(indices)
         labeled_set = indices[:cf.ADDENDUM]
         unlabeled_set = indices[cf.ADDENDUM:]
-
         train_loader = DataLoader(cifar10_train, batch_size=cf.BATCH,
                                   sampler=SubsetRandomSampler(labeled_set),
                                   pin_memory=True)
         test_loader = DataLoader(cifar10_test, batch_size=cf.BATCH)
-
         model = get_model(method="LL4AL", backbone="resnet18", num_classes=10)
         torch.backends.cudnn.benchmark = False
 
-        # Active learning cycles
-        for cycle in range(cf.CYCLES):
-            checkpoint_callback = ModelCheckpoint(monitor="val_acc",
-                                                  save_last=True,
-                                                  save_top_k=1,
-                                                  mode='max')
-            lr_callback = LearningRateMonitor(logging_interval='epoch')
-            trainer = pl.Trainer(
-                gpus=torch.cuda.device_count(),
-                max_epochs=cf.EPOCH,
-                accumulate_grad_batches=1,
-                sync_batchnorm=True,
-                default_root_dir=exp_dir,
-                callbacks=[checkpoint_callback,
-                           lr_callback]
-            )
-            trainer.fit(model, train_loader, test_loader)
-            trainer.test(model, test_loader)
-            
-            # Annotate some unlabeled samples for active learning (AL)
-            labeled_set, unlabeled_set, train_loader = \
-                query_unlabeled_samples(
-                    labeled_set=labeled_set,
-                    unlabeled_set=unlabeled_set, 
-                    unlabeled_dataset=cifar10_unlabeled,
-                    trainer=trainer,
-                    model=model)
+        # Run typical AL experiment that gradually expands the dataset
+        result = run_AL_experiment(labeled_set, unlabeled_set, train_loader, test_loader, model)
+        print(f"The result at {trial}-th trial is: {result}")

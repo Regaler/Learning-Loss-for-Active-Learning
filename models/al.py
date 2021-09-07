@@ -194,6 +194,26 @@ class LL4AL(pl.LightningModule):
         self.log("val_acc", total_acc)
         self.log("val_loss", total_loss)
 
+    def test_step(self, batch, batch_idx):
+        x, y = batch
+        total = 0
+        correct = 0
+        with torch.no_grad():
+            y = y.cuda()
+            scores, _ = self.backbone(x.cuda())
+            _, preds = torch.max(scores.data, 1)
+            total += y.size(0)
+            correct += (preds == y).sum().item()
+        acc = 100 * correct / total
+        return acc
+
+    def test_epoch_end(self, test_step_outputs):
+        total_acc = 0
+        for acc in test_step_outputs:
+            total_acc += acc
+        total_acc = total_acc / len(test_step_outputs)
+        self.log("test_acc", total_acc)
+
     def predict_step(self, batch, dataloader_idx):
         x, _ = batch        
         _, features = self.backbone(x.cuda())
