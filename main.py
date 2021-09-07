@@ -138,7 +138,7 @@ def run_AL_experiment(labeled_set, unlabeled_set, train_loader, test_loader, mod
                 unlabeled_dataset=cifar10_unlabeled,
                 trainer=trainer,
                 model=model)
-    return result[0]
+    return result
 
 
 if __name__ == '__main__':
@@ -166,3 +166,5 @@ if __name__ == '__main__':
         # Run typical AL experiment that gradually expands the dataset
         result = run_AL_experiment(labeled_set, unlabeled_set, train_loader, test_loader, model)
         print(f"The result at {trial}-th trial is: {result}")
+        with open(f"result_{trial}.txt", 'w') as f:
+            f.write("\n".join([str(x) for x in result]))
