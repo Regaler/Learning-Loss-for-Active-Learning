@@ -27,6 +27,7 @@ import models.resnet as resnet
 import models.lossnet as lossnet
 import config as cf
 from data.sampler import SubsetSequentialSampler
+from data.dataset import get_dataset
 
 
 def get_uncertainty(trainer, model, unlabeled_loader):
@@ -41,26 +42,9 @@ if __name__ == '__main__':
     torch.backends.cudnn.deterministic = True
 
     # Data
-    train_transform = T.Compose([
-        T.RandomHorizontalFlip(),
-        T.RandomCrop(size=32, padding=4),
-        T.ToTensor(),
-        T.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
-    ])
-    # T.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)) # CIFAR-100
-
-    test_transform = T.Compose([
-        T.ToTensor(),
-        T.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
-    ])
-    # T.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)) # CIFAR-100
-
-    cifar10_train = CIFAR10('../cifar10', train=True,
-                            download=True, transform=train_transform)
-    cifar10_unlabeled = CIFAR10('../cifar10', train=True,
-                                download=True, transform=test_transform)
-    cifar10_test = CIFAR10('../cifar10', train=False,
-                           download=True, transform=test_transform)
+    cifar10_train = get_dataset(name="CIFAR10", train=True, download=True, transform="train")
+    cifar10_unlabeled = get_dataset(name="CIFAR10", train=True, download=True, transform="test")
+    cifar10_test = get_dataset(name="CIFAR10", train=False, download=True, transform="test")
 
     for trial in range(cf.TRIALS):
         exp_dir = f"./result/cifar10/train/trial_{trial}"
