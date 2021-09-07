@@ -29,20 +29,26 @@ def get_model(method, backbone, num_classes):
     """
     # Select the backbone
     if backbone == "resnet18":
-        resnet = rn.ResNet18(num_classes=num_classes).cuda()
+        resnet = rn.ResNet18(num_classes=num_classes)
     else:
         raise ValueError(f"The backbone {backbone} is not supported. ")
     # Get the Lightning model
     if method == "LL4AL":
-        losspred = LossNet().cuda()
+        losspred = LossNet()
         model = LL4AL(resnet, losspred)
     else:
         raise ValueError(f"The policy {method} is not supported. ")
     return model
 
 def LossPredLoss(input, target, margin=1.0, reduction='mean'):
-    assert len(input) % 2 == 0, 'the batch size is not even.'
-    assert input.shape == input.flip(0).shape
+    # assert len(input) % 2 == 0, 'the batch size is not even.'
+    # assert input.shape == input.flip(0).shape
+    if len(input) % 2 == 0:
+        pass
+    else:
+        input = input[:-1]
+        target = target[:-1]
+
     # [l_1 - l_2B, l_2 - l_2B-1, ... , l_B - l_B+1], where batch_size = 2B
     input = (input - input.flip(0))[:len(input)//2]
     target = (target - target.flip(0))[:len(target)//2]

@@ -119,6 +119,7 @@ def run_AL_experiment(labeled_set, unlabeled_set, train_loader, test_loader, mod
         lr_callback = LearningRateMonitor(logging_interval='epoch')
         trainer = pl.Trainer(
             gpus=torch.cuda.device_count(),
+            accelerator='dp',
             max_epochs=cf.EPOCH,
             accumulate_grad_batches=1,
             sync_batchnorm=True,
