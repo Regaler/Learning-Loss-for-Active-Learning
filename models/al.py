@@ -1,10 +1,45 @@
+# pytorch
 import torch
 import torch.nn as nn
 import torch.optim.lr_scheduler as lr_scheduler
 import torch.optim as optim
 import pytorch_lightning as pl
+
+# custom
+import models.resnet as rn
+import models.lossnet as lossnet
 import config as cf
 
+
+def get_model(method, backbone, num_classes):
+    """
+    Get the proper model
+
+    Parameters
+    ----------
+    method: str
+        The active learning method to apply
+    backbone: str
+        the name of the backbone
+    num_classes: int
+        the number of class
+
+    Returns
+    -------
+    pytorch_lightning.LightningModule
+    """
+    # Select the backbone
+    if backbone == "resnet18":
+        resnet = rn.ResNet18(num_classes=num_classes).cuda()
+    else:
+        raise ValueError(f"The backbone {backbone} is not supported. ")
+    # Get the Lightning model
+    if method == "LL4AL":
+        losspred = lossnet.LossNet().cuda()
+        model = LL4AL(resnet, losspred)
+    else:
+        raise ValueError(f"The policy {method} is not supported. ")
+    return model
 
 def LossPredLoss(input, target, margin=1.0, reduction='mean'):
     assert len(input) % 2 == 0, 'the batch size is not even.'

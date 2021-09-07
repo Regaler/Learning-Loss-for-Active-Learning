@@ -19,12 +19,10 @@ from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 import torchvision.transforms as T
 
 # Custom
-import models.resnet as resnet
-import models.lossnet as lossnet
 import config as cf
 from data.sampler import SubsetSequentialSampler
 from data.dataset import get_dataset
-from models.al import LL4AL
+from models.al import get_model
 
 
 def get_uncertainty(trainer, model, unlabeled_loader):
@@ -55,10 +53,8 @@ if __name__ == '__main__':
                                   sampler=SubsetRandomSampler(labeled_set),
                                   pin_memory=True)
         test_loader = DataLoader(cifar10_test, batch_size=cf.BATCH)
-        # define model
-        resnet18 = resnet.ResNet18(num_classes=10).cuda()
-        losspred = lossnet.LossNet().cuda()
-        model = LL4AL(resnet18, losspred)
+
+        model = get_model(method="LL4AL", backbone="resnet18", num_classes=10)
         torch.backends.cudnn.benchmark = False
 
         # Active learning cycles
