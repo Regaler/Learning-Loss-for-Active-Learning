@@ -159,7 +159,7 @@ def train(models, criterion, optimizers, schedulers, dataloaders, num_epochs,
                     epoch_loss, vis, plot_data)
 
         # Save a checkpoint
-        if False and epoch % 5 == 4:
+        if epoch % 5 == 4:
             acc = test(models, dataloaders, 'test')
             if best_acc < acc:
                 best_acc = acc
