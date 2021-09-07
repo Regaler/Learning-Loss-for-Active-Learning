@@ -1,17 +1,19 @@
 '''Loss Prediction Module in PyTorch.
 
 Reference:
-[Yoo et al. 2019] Learning Loss for Active Learning (https://arxiv.org/abs/1905.03677)
+[Yoo et al. 2019] Learning Loss for Active Learning
+(https://arxiv.org/abs/1905.03677)
 '''
 import torch
-import torch.nn as nn 
-import torch.nn.functional as F 
+import torch.nn as nn
+import torch.nn.functional as F
 
 
 class LossNet(nn.Module):
-    def __init__(self, feature_sizes=[32, 16, 8, 4], num_channels=[64, 128, 256, 512], interm_dim=128):
+    def __init__(self, feature_sizes=[32, 16, 8, 4],
+                 num_channels=[64, 128, 256, 512], interm_dim=128):
         super(LossNet, self).__init__()
-        
+
         self.GAP1 = nn.AvgPool2d(feature_sizes[0])
         self.GAP2 = nn.AvgPool2d(feature_sizes[1])
         self.GAP3 = nn.AvgPool2d(feature_sizes[2])
@@ -23,7 +25,7 @@ class LossNet(nn.Module):
         self.FC4 = nn.Linear(num_channels[3], interm_dim)
 
         self.linear = nn.Linear(4 * interm_dim, 1)
-    
+
     def forward(self, features):
         out1 = self.GAP1(features[0])
         out1 = out1.view(out1.size(0), -1)
