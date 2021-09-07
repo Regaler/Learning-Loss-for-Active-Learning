@@ -24,6 +24,11 @@ from data.sampler import SubsetSequentialSampler
 from data.dataset import get_dataset
 from models.al import get_model
 
+# Seed
+random.seed("Minuk Ma")
+torch.manual_seed(0)
+torch.backends.cudnn.deterministic = True
+
 
 def get_uncertainty(trainer, model, unlabeled_loader):
     predictions = trainer.predict(model, unlabeled_loader)
@@ -137,11 +142,6 @@ def run_AL_experiment(labeled_set, unlabeled_set, train_loader, test_loader, mod
 
 
 if __name__ == '__main__':
-    # Seed
-    random.seed("Minuk Ma")
-    torch.manual_seed(0)
-    torch.backends.cudnn.deterministic = True
-
     # Data
     cifar10_train = get_dataset(name="CIFAR10", train=True, download=True, transform="train")
     cifar10_unlabeled = get_dataset(name="CIFAR10", train=True, download=True, transform="test")
