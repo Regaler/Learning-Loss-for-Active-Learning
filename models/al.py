@@ -106,6 +106,16 @@ class LossNet(nn.Module):
 
 
 class LL4AL(pl.LightningModule):
+    """
+    The Lightning class for LL4AL method
+    
+    Parameters
+    ----------
+    backbone: nn.Module
+        The backbone object
+    losspred: nn.Module
+        The loss prediction module object
+    """
     def __init__(self, cf, backbone, losspred):
         super().__init__()
         self.backbone = backbone

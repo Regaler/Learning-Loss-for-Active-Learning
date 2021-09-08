@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data.sampler import SubsetRandomSampler
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
+from pytorch_lightning.loggers import WandbLogger
 
 # Custom
 # import config as cf
@@ -70,9 +71,20 @@ def get_config():
                         help="After this epoch, stop gradient from the loss \
                             prediction module propagated to the target model")
     parser.add_argument("--subset", metavar="M", default=10000, type=int,
-                        help="The number of unlabeled to consider at each cycle")
+                        help="The num of unlabeled to consider at each cycle")
     parser.add_argument("--addendum", metavar="K", default=1000, type=int,
                         help="The number of samples to query at each cycle")
+    # wandb related
+    parser.add_argument('--comment',
+                        default=datetime.now().strftime('%b%d_%H-%M-%S'),
+                        type=str,
+                        help='wandb comment')
+    parser.add_argument('--project', default='ActiveLearning', type=str,
+                        help='wandb project')
+    parser.add_argument('--entity', default=None, type=str,
+                        help='wandb entity')
+    parser.add_argument('--offline', default=False, action='store_true',
+                        help='disable wandb')
 
     cf = parser.parse_args()
     cf.milestones = [int(x) for x in cf.milestones]
@@ -152,7 +164,7 @@ def query_unlabeled_samples(cf, labeled_set, unlabeled_set,
     return labeled_set, unlabeled_set, train_loader
 
 
-def run_AL_experiment(cf, labeled_set, unlabeled_set,
+def run_AL_experiment(cf, logger, labeled_set, unlabeled_set,
                       train_loader, test_loader, model):
     """
     Run typical AL experiment that gradually expands the dataset
@@ -191,7 +203,8 @@ def run_AL_experiment(cf, labeled_set, unlabeled_set,
             sync_batchnorm=True,
             default_root_dir=exp_dir,
             callbacks=[checkpoint_callback,
-                        lr_callback]
+                        lr_callback],
+            logger=logger
         )
         trainer.fit(model, train_loader, test_loader)
         res = trainer.test(model, test_loader)
@@ -232,6 +245,12 @@ if __name__ == '__main__':
     # Therefore, do the experiment many times
     for trial in range(cf.trials):
         exp_dir = prepare_exp_result_dir(cf.desc, cf.dataset, trial)
+        logger = WandbLogger(
+            name=exp_dir,
+            project=cf.project,
+            entity=cf.entity,
+            offline=cf.offline)
+        logger.log_hyperparams(cf)
         # Initialize a labeled dataset by randomly sampling K=ADDENDUM=1,000
         indices = list(range(cf.num_train))
         random.shuffle(indices)
@@ -248,11 +267,13 @@ if __name__ == '__main__':
                             batch_size=cf.batch
                       )
         model = get_model(cf, cf.method, cf.backbone)
+        logger.watch(model)
         torch.backends.cudnn.benchmark = False
 
         # Run typical AL experiment that gradually expands the dataset
         result = run_AL_experiment(
                     cf,
+                    logger,
                     labeled_set,
                     unlabeled_set,
                     train_loader,
@@ -262,4 +283,3 @@ if __name__ == '__main__':
         print(f"The result at {trial}-th trial is: {result}")
         with open(f"result_{trial}.txt", 'w') as f:
             f.write("\n".join([str(x) for x in result]))
-
