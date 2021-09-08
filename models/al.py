@@ -110,15 +110,7 @@ class LL4AL(pl.LightningModule):
         super().__init__()
         self.backbone = backbone
         self.losspred = losspred
-        self.criterion = nn.CrossEntropyLoss(reduction='none')
-        self.optim_backbone = optim.SGD(self.backbone.parameters(), 
-                                        lr=cf.LR, 
-                                        momentum=cf.MOMENTUM, 
-                                        weight_decay=cf.WDECAY)
-        self.optim_losspred = optim.SGD(self.losspred.parameters(), 
-                                        lr=cf.LR, 
-                                        momentum=cf.MOMENTUM, 
-                                        weight_decay=cf.WDECAY)
+        self.criterion = nn.CrossEntropyLoss(reduction='none')        
 
     def forward(self, x):
         # Predict the loss of a sample
@@ -212,14 +204,22 @@ class LL4AL(pl.LightningModule):
         return pred_loss
 
     def configure_optimizers(self):
-        optimizer = [self.optim_backbone, self.optim_losspred]
+        optim_backbone = optim.SGD(self.backbone.parameters(), 
+                                    lr=cf.LR,
+                                    momentum=cf.MOMENTUM,
+                                    weight_decay=cf.WDECAY)
+        optim_losspred = optim.SGD(self.losspred.parameters(), 
+                                    lr=cf.LR,
+                                    momentum=cf.MOMENTUM,
+                                    weight_decay=cf.WDECAY)
         scheduler1 = lr_scheduler.MultiStepLR(
-                                    self.optim_backbone, 
+                                    optim_backbone, 
                                     milestones=cf.MILESTONES, 
                                     gamma=0.1)
         scheduler2 = lr_scheduler.MultiStepLR(
-                                    self.optim_losspred, 
+                                    optim_losspred, 
                                     milestones=cf.MILESTONES, 
                                     gamma=0.1)
+        optimizer = [optim_backbone, optim_losspred]
         scheduler = [scheduler1, scheduler2]
         return optimizer, scheduler
