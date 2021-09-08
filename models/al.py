@@ -43,6 +43,7 @@ def get_model(method, backbone, num_classes, optimizer):
         raise ValueError(f"The policy {method} is not supported. ")
     return model
 
+
 def LossPredLoss(input, target, margin=1.0, reduction='mean'):
     # assert len(input) % 2 == 0, 'the batch size is not even.'
     # assert input.shape == input.flip(0).shape
@@ -68,6 +69,7 @@ def LossPredLoss(input, target, margin=1.0, reduction='mean'):
     else:
         NotImplementedError()
     return loss
+
 
 class LossNet(nn.Module):
     def __init__(self, feature_sizes=[32, 16, 8, 4],
@@ -112,7 +114,7 @@ class LL4AL(pl.LightningModule):
         super().__init__()
         self.backbone = backbone
         self.losspred = losspred
-        self.criterion = nn.CrossEntropyLoss(reduction='none')        
+        self.criterion = nn.CrossEntropyLoss(reduction='none')
         self.optim = optimizer
 
     def forward(self, x):
@@ -124,7 +126,7 @@ class LL4AL(pl.LightningModule):
         x, y = batch
         y = y.cuda()
         scores, features = self.backbone(x.cuda())
-        
+
         if self.current_epoch > cf.EPOCHL:
             # After 120 epochs, stop the gradient from the loss prediction
             # module propagated to the target model.
@@ -133,7 +135,7 @@ class LL4AL(pl.LightningModule):
             features[2] = features[2].detach()
             features[3] = features[3].detach()
 
-        # Calculate the losses. Predict the loss as well. 
+        # Calculate the losses. Predict the loss as well.
         pred_loss = self.losspred(features)
         pred_loss = pred_loss.view(pred_loss.size(0))
         target_loss = self.criterion(scores, y)
@@ -164,7 +166,8 @@ class LL4AL(pl.LightningModule):
             pred_loss = pred_loss.view(pred_loss.size(0))
             target_loss = self.criterion(scores, y)
             backbone_loss = torch.sum(target_loss) / target_loss.size(0)
-            losspred_loss = LossPredLoss(pred_loss, target_loss, margin=cf.MARGIN)
+            losspred_loss = LossPredLoss(pred_loss, target_loss,
+                                         margin=cf.MARGIN)
             loss = backbone_loss + cf.WEIGHT * losspred_loss
         acc = 100 * correct / total
         return acc, loss
@@ -201,28 +204,28 @@ class LL4AL(pl.LightningModule):
         self.log("test_acc", total_acc)
 
     def predict_step(self, batch, dataloader_idx):
-        x, _ = batch        
+        x, _ = batch
         _, features = self.backbone(x.cuda())
         pred_loss = self.losspred(features)
         return pred_loss
 
     def configure_optimizers(self):
         if self.optim == "SGD":
-            optim_backbone = optim.SGD(self.backbone.parameters(), 
-                                        lr=cf.LR,
-                                        momentum=cf.MOMENTUM,
-                                        weight_decay=cf.WDECAY)
-            optim_losspred = optim.SGD(self.losspred.parameters(), 
-                                        lr=cf.LR,
-                                        momentum=cf.MOMENTUM,
-                                        weight_decay=cf.WDECAY)
+            optim_backbone = optim.SGD(self.backbone.parameters(),
+                                       lr=cf.LR,
+                                       momentum=cf.MOMENTUM,
+                                       weight_decay=cf.WDECAY)
+            optim_losspred = optim.SGD(self.losspred.parameters(),
+                                       lr=cf.LR,
+                                       momentum=cf.MOMENTUM,
+                                       weight_decay=cf.WDECAY)
             scheduler1 = lr_scheduler.MultiStepLR(
-                                        optim_backbone, 
-                                        milestones=cf.MILESTONES, 
+                                        optim_backbone,
+                                        milestones=cf.MILESTONES,
                                         gamma=0.1)
             scheduler2 = lr_scheduler.MultiStepLR(
-                                        optim_losspred, 
-                                        milestones=cf.MILESTONES, 
+                                        optim_losspred,
+                                        milestones=cf.MILESTONES,
                                         gamma=0.1)
         elif self.optim == "Adam":
             optim_backbone = optim.Adam(self.backbone.parameters(),
@@ -232,13 +235,14 @@ class LL4AL(pl.LightningModule):
                                         lr=cf.LR,
                                         weight_decay=cf.WDECAY)
             scheduler1 = lr_scheduler.MultiStepLR(
-                                        optim_backbone, 
-                                        milestones=cf.MILESTONES, 
+                                        optim_backbone,
+                                        milestones=cf.MILESTONES,
                                         gamma=0.1)
             scheduler2 = lr_scheduler.MultiStepLR(
-                                        optim_losspred, 
-                                        milestones=cf.MILESTONES, 
+                                        optim_losspred,
+                                        milestones=cf.MILESTONES,
                                         gamma=0.1)
         optimizer = [optim_backbone, optim_losspred]
         scheduler = [scheduler1, scheduler2]
         return optimizer, scheduler
+

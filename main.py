@@ -30,6 +30,7 @@ random.seed("Minuk Ma")
 torch.manual_seed(0)
 torch.backends.cudnn.deterministic = True
 
+
 def prepare_exp_result_dir(desc, dataset, trial):
     dateTimeObj = datetime.now()
     now = dateTimeObj.strftime("%d-%b-%Y-%H-%M-%S")
@@ -42,12 +43,12 @@ def get_uncertainty(trainer, model, unlabeled_loader):
     return torch.cat(predictions, dim=0).squeeze().cpu()
 
 
-def query_unlabeled_samples(labeled_set, unlabeled_set, 
+def query_unlabeled_samples(labeled_set, unlabeled_set,
                             unlabeled_dataset, trainer, model):
     """
-    Get unlabeled samples to annotate for active learning
-    Randomly sample 10000 unlabeled data points, as there can be too many unlabeled
-    The get_uncertainty function measures the information of the unlabeled samples
+    Get unlabeled samples to annotate for AL
+    Randomly sample 10K unlabeled data points, to avoid too many unlabeled
+    get_uncertainty() measures the info of the unlabeled samples
     As a result, the labeled set, unlabeled sets, and train_loader are updated
 
     Parameters
@@ -78,23 +79,26 @@ def query_unlabeled_samples(labeled_set, unlabeled_set,
     # Create unlabeled dataloader for the unlabeled subset
     # more convenient if we maintain the order of subset for Sampler
     unlabeled_loader = DataLoader(unlabeled_dataset,
-                                    batch_size=cf.BATCH,
-                                    sampler=SubsetSequentialSampler(subset),
-                                    pin_memory=True)
+                                  batch_size=cf.BATCH,
+                                  sampler=SubsetSequentialSampler(subset),
+                                  pin_memory=True)
     uncertainty = get_uncertainty(trainer, model, unlabeled_loader)
     # Index in ascending order
     arg = np.argsort(uncertainty)
     # Update the labeled dataset and the unlabeled dataset, respectively
     labeled_set += list(torch.tensor(subset)[arg][-cf.ADDENDUM:].numpy())
-    unlabeled_set = list(torch.tensor(subset)[arg][:-cf.ADDENDUM].numpy()) + unlabeled_set[cf.SUBSET:]
+    unlabeled_set = list(torch.tensor(subset)[arg][:-cf.ADDENDUM].numpy()) + \
+        unlabeled_set[cf.SUBSET:]
     # Create a new dataloader for the updated labeled dataset
-    train_loader = DataLoader(dataset_train, batch_size=cf.BATCH,
-                            sampler=SubsetRandomSampler(labeled_set),
-                            pin_memory=True)
+    train_loader = DataLoader(dataset_train,
+                              batch_size=cf.BATCH,
+                              sampler=SubsetRandomSampler(labeled_set),
+                              pin_memory=True)
     return labeled_set, unlabeled_set, train_loader
 
 
-def run_AL_experiment(labeled_set, unlabeled_set, train_loader, test_loader, model):
+def run_AL_experiment(labeled_set, unlabeled_set,
+                      train_loader, test_loader, model):
     """
     Run typical AL experiment that gradually expands the dataset
 
@@ -103,7 +107,7 @@ def run_AL_experiment(labeled_set, unlabeled_set, train_loader, test_loader, mod
     labeled_set: list[int]
         The initial labeled samples that was selected randomly
     unlabeled_set: list[int]
-        The initial unlabeled samples, which is complementary to the labeled set
+        The initial unlabeled samples complementary to the labeled set
     train_loader: torch.utils.data.DataLoader
         The data loader with the initial labeled trn set
     test_loader: torch.utils.data.DataLoader
@@ -137,12 +141,12 @@ def run_AL_experiment(labeled_set, unlabeled_set, train_loader, test_loader, mod
         trainer.fit(model, train_loader, test_loader)
         res = trainer.test(model, test_loader)
         result.append(res[0]["test_acc"])  # append float value
-        
+
         # Annotate some unlabeled samples for active learning (AL)
         labeled_set, unlabeled_set, train_loader = \
             query_unlabeled_samples(
                 labeled_set=labeled_set,
-                unlabeled_set=unlabeled_set, 
+                unlabeled_set=unlabeled_set,
                 unlabeled_dataset=dataset_unlabeled,
                 trainer=trainer,
                 model=model)
@@ -151,23 +155,35 @@ def run_AL_experiment(labeled_set, unlabeled_set, train_loader, test_loader, mod
 
 if __name__ == '__main__':
     parser = ArgumentParser()
-    parser.add_argument("--desc", default="Dummy", type=str, 
+    parser.add_argument("--desc", default="Dummy", type=str,
                         help="The description of this experiment")
-    parser.add_argument("--method", default="LL4AL", type=str, 
+    parser.add_argument("--method", default="LL4AL", type=str,
                         choices=["random", "LL4AL"],
                         help="The AL method for the experiment")
-    parser.add_argument("--dataset", default="CIFAR10", type=str, 
+    parser.add_argument("--dataset", default="CIFAR10", type=str,
                         choices=["CIFAR10", "CIFAR100"])
-    parser.add_argument("--backbone", default="resnet18", type=str, 
+    parser.add_argument("--backbone", default="resnet18", type=str,
                         choices=["resnet18", "resnet34"])
-    parser.add_argument('--optimizer', default='SGD', type=str, 
+    parser.add_argument('--optimizer', default='SGD', type=str,
                         choices=["SGD", "Adam"])
     args = parser.parse_args()
-    
+
     # Data
-    dataset_train = get_dataset(name=args.dataset, train=True, download=True, transform="train")
-    dataset_unlabeled = get_dataset(name=args.dataset, train=True, download=True, transform="test")
-    dataset_test = get_dataset(name=args.dataset, train=False, download=True, transform="test")
+    dataset_train = get_dataset(
+                        name=args.dataset,
+                        train=True,
+                        download=True,
+                        transform="train")
+    dataset_unlabeled = get_dataset(
+                            name=args.dataset,
+                            train=True,
+                            download=True,
+                            transform="test")
+    dataset_test = get_dataset(
+                        name=args.dataset,
+                        train=False,
+                        download=True,
+                        transform="test")
 
     # AL is sensitive to the choice of initial labeled set
     # Therefore, do the experiment many times
@@ -179,25 +195,32 @@ if __name__ == '__main__':
         labeled_set = indices[:cf.ADDENDUM]
         unlabeled_set = indices[cf.ADDENDUM:]
         train_loader = DataLoader(
-                            dataset_train, 
+                            dataset_train,
                             batch_size=cf.BATCH,
                             sampler=SubsetRandomSampler(labeled_set),
                             pin_memory=True
                        )
         test_loader = DataLoader(
-                            dataset_test, 
+                            dataset_test,
                             batch_size=cf.BATCH
                       )
         model = get_model(
-                    method=args.method, 
-                    backbone=args.backbone, 
-                    num_classes=10, 
+                    method=args.method,
+                    backbone=args.backbone,
+                    num_classes=10,
                     optimizer=args.optimizer
                 )
         torch.backends.cudnn.benchmark = False
 
         # Run typical AL experiment that gradually expands the dataset
-        result = run_AL_experiment(labeled_set, unlabeled_set, train_loader, test_loader, model)
+        result = run_AL_experiment(
+                    labeled_set,
+                    unlabeled_set,
+                    train_loader,
+                    test_loader,
+                    model
+        )
         print(f"The result at {trial}-th trial is: {result}")
         with open(f"result_{trial}.txt", 'w') as f:
             f.write("\n".join([str(x) for x in result]))
+
