@@ -104,40 +104,27 @@ class LossNet(nn.Module):
         out = self.linear(torch.cat((out1, out2, out3, out4), 1))
         return out
 
-
-class LL4AL(pl.LightningModule):
+class NormalModel(pl.LightningModule):
     """
-    The Lightning class for LL4AL method
+    The basic model that trains a resnet
 
     Parameters
     ----------
     backbone: nn.Module
         The backbone object
-    losspred: nn.Module
-        The loss prediction module object
     """
-    def __init__(self, cf, backbone, losspred):
+    def __init__(self, cf, backbone):
         super().__init__()
-        self.backbone = backbone
-        self.losspred = losspred
+        self.backbone = backbone  # returns scores and features
         self.criterion = nn.CrossEntropyLoss(reduction='none')
         self.cf = cf
 
     def forward(self, x):
-        # Predict the loss of a sample
-        pred_loss = self.losspred(x)
-        return pred_loss
+        scores, features = self.backbone(x)
+        return scores
 
     def _get_loss(self, scores, y, features):
-        # Calculate the losses. Predict the loss as well.
-        pred_loss = self.losspred(features)
-        pred_loss = pred_loss.view(pred_loss.size(0))
-        target_loss = self.criterion(scores, y)
-        backbone_loss = torch.sum(target_loss) / target_loss.size(0)
-        losspred_loss = LossPredLoss(pred_loss, target_loss,
-                                     margin=self.cf.margin)
-        loss = backbone_loss + self.cf.weight * losspred_loss
-        return loss
+        return self.criterion(scores, y)
 
     def _get_acc(self, scores, y):
         _, preds = torch.max(scores.data, 1)
@@ -150,16 +137,7 @@ class LL4AL(pl.LightningModule):
         x, y = batch
         y = y.cuda()
         scores, features = self.backbone(x.cuda())
-
-        if self.current_epoch > self.cf.epochl:
-            # After 120 epochs, stop the gradient from the loss prediction
-            # module propagated to the target model.
-            features[0] = features[0].detach()
-            features[1] = features[1].detach()
-            features[2] = features[2].detach()
-            features[3] = features[3].detach()
-
-        loss = self._get_loss(scores, y, features)
+        loss = self._get_loss(scores, y)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -203,6 +181,79 @@ class LL4AL(pl.LightningModule):
             total_acc += acc
         total_acc = total_acc / len(test_step_outputs)
         self.log("test_acc", total_acc)
+
+    def predict_step(self, batch, dataloader_idx):
+        x, _ = batch
+        scores, features = self.backbone(x.cuda())
+        return scores
+
+    def configure_optimizers(self):
+        if self.cf.optimizer == "SGD":
+            optim_backbone = optim.SGD(self.backbone.parameters(),
+                                       lr=self.cf.lr,
+                                       momentum=self.cf.momentum,
+                                       weight_decay=self.cf.wd)            
+        elif self.cf.optimizer == "Adam":
+            optim_backbone = optim.Adam(self.backbone.parameters(),
+                                        lr=self.cf.lr,
+                                        weight_decay=self.cf.wd)
+        scheduler1 = lr_scheduler.MultiStepLR(
+                                        optim_backbone,
+                                        milestones=self.cf.milestones,
+                                        gamma=0.1)
+        optimizer = [optim_backbone]
+        scheduler = [scheduler1]
+        return optimizer, scheduler
+
+class LL4AL(NormalModel):
+    """
+    The Lightning class for LL4AL method
+
+    Parameters
+    ----------
+    backbone: nn.Module
+        The backbone object
+    losspred: nn.Module
+        The loss prediction module object
+    """
+    def __init__(self, cf, backbone, losspred):
+        super().__init__(cf, backbone)
+        self.backbone = backbone
+        self.losspred = losspred
+        self.criterion = nn.CrossEntropyLoss(reduction='none')
+        self.cf = cf
+
+    def forward(self, x):
+        # Predict the loss of a sample
+        pred_loss = self.losspred(x)
+        return pred_loss
+
+    def _get_loss(self, scores, y, features):
+        # Calculate the losses. Predict the loss as well.
+        pred_loss = self.losspred(features)
+        pred_loss = pred_loss.view(pred_loss.size(0))
+        target_loss = self.criterion(scores, y)
+        backbone_loss = torch.sum(target_loss) / target_loss.size(0)
+        losspred_loss = LossPredLoss(pred_loss, target_loss,
+                                     margin=self.cf.margin)
+        loss = backbone_loss + self.cf.weight * losspred_loss
+        return loss
+
+    def training_step(self, batch, batch_idx, optimizer_idx):
+        x, y = batch
+        y = y.cuda()
+        scores, features = self.backbone(x.cuda())
+
+        if self.current_epoch > self.cf.epochl:
+            # After 120 epochs, stop the gradient from the loss prediction
+            # module propagated to the target model.
+            features[0] = features[0].detach()
+            features[1] = features[1].detach()
+            features[2] = features[2].detach()
+            features[3] = features[3].detach()
+
+        loss = self._get_loss(scores, y, features)
+        return loss
 
     def predict_step(self, batch, dataloader_idx):
         x, _ = batch
