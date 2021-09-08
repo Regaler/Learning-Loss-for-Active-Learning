@@ -10,6 +10,7 @@ Reference:
 import random
 import numpy as np
 from datetime import datetime
+from argparse import ArgumentParser
 
 # Torch
 import torch
@@ -29,10 +30,10 @@ random.seed("Minuk Ma")
 torch.manual_seed(0)
 torch.backends.cudnn.deterministic = True
 
-def prepare_exp_result_dir(desc):
+def prepare_exp_result_dir(desc, dataset, trial):
     dateTimeObj = datetime.now()
     now = dateTimeObj.strftime("%d-%b-%Y-%H-%M-%S")
-    outdir = f"./result/cifar10/{now}_{desc}_{trial}"
+    outdir = f"./result/{dataset}/{now}_{desc}_{trial}"
     return outdir
 
 
@@ -87,7 +88,7 @@ def query_unlabeled_samples(labeled_set, unlabeled_set,
     labeled_set += list(torch.tensor(subset)[arg][-cf.ADDENDUM:].numpy())
     unlabeled_set = list(torch.tensor(subset)[arg][:-cf.ADDENDUM].numpy()) + unlabeled_set[cf.SUBSET:]
     # Create a new dataloader for the updated labeled dataset
-    train_loader = DataLoader(cifar10_train, batch_size=cf.BATCH,
+    train_loader = DataLoader(dataset_train, batch_size=cf.BATCH,
                             sampler=SubsetRandomSampler(labeled_set),
                             pin_memory=True)
     return labeled_set, unlabeled_set, train_loader
@@ -142,43 +143,56 @@ def run_AL_experiment(labeled_set, unlabeled_set, train_loader, test_loader, mod
             query_unlabeled_samples(
                 labeled_set=labeled_set,
                 unlabeled_set=unlabeled_set, 
-                unlabeled_dataset=cifar10_unlabeled,
+                unlabeled_dataset=dataset_unlabeled,
                 trainer=trainer,
                 model=model)
     return result
 
 
 if __name__ == '__main__':
+    parser = ArgumentParser()
+    parser.add_argument("--desc", default="Dummy", type=str, 
+                        help="The description of this experiment")
+    parser.add_argument("--method", default="LL4AL", type=str, 
+                        choices=["random", "LL4AL"],
+                        help="The AL method for the experiment")
+    parser.add_argument("--dataset", default="CIFAR10", type=str, 
+                        choices=["CIFAR10", "CIFAR100"])
+    parser.add_argument("--backbone", default="resnet18", type=str, 
+                        choices=["resnet18", "resnet34"])
+    parser.add_argument('--optimizer', default='SGD', type=str, 
+                        choices=["SGD", "Adam"])
+    args = parser.parse_args()
+    
     # Data
-    cifar10_train = get_dataset(name="CIFAR10", train=True, download=True, transform="train")
-    cifar10_unlabeled = get_dataset(name="CIFAR10", train=True, download=True, transform="test")
-    cifar10_test = get_dataset(name="CIFAR10", train=False, download=True, transform="test")
+    dataset_train = get_dataset(name=args.dataset, train=True, download=True, transform="train")
+    dataset_unlabeled = get_dataset(name=args.dataset, train=True, download=True, transform="test")
+    dataset_test = get_dataset(name=args.dataset, train=False, download=True, transform="test")
 
     # AL is sensitive to the choice of initial labeled set
     # Therefore, do the experiment many times
     for trial in range(cf.TRIALS):
-        desc="DummyExp"
-        exp_dir = prepare_exp_result_dir(desc=f"{desc}_{trial}")
+        exp_dir = prepare_exp_result_dir(args.desc, args.dataset, trial)
         # Initialize a labeled dataset by randomly sampling K=ADDENDUM=1,000
         indices = list(range(cf.NUM_TRAIN))
         random.shuffle(indices)
         labeled_set = indices[:cf.ADDENDUM]
         unlabeled_set = indices[cf.ADDENDUM:]
         train_loader = DataLoader(
-                            cifar10_train, 
+                            dataset_train, 
                             batch_size=cf.BATCH,
                             sampler=SubsetRandomSampler(labeled_set),
                             pin_memory=True
                        )
         test_loader = DataLoader(
-                            cifar10_test, 
+                            dataset_test, 
                             batch_size=cf.BATCH
                       )
         model = get_model(
-                    method="LL4AL", 
-                    backbone="resnet18", 
+                    method=args.method, 
+                    backbone=args.backbone, 
                     num_classes=10, 
-                    optimizer="Adam"
+                    optimizer=args.optimizer
                 )
         torch.backends.cudnn.benchmark = False
 
