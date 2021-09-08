@@ -247,7 +247,6 @@ if __name__ == '__main__':
                             dataset_test,
                             batch_size=cf.batch
                       )
-        breakpoint()
         model = get_model(cf, cf.method, cf.backbone)
         torch.backends.cudnn.benchmark = False
 
