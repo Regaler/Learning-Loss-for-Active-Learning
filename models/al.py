@@ -35,6 +35,8 @@ def get_model(cf, method, backbone):
     if method == "LL4AL":
         losspred = LossNet()
         model = LL4AL(cf, resnet, losspred)
+    elif method == "random":
+        model = NormalModel(cf, resnet)
     else:
         raise ValueError(f"The policy {method} is not supported. ")
     return model
@@ -133,11 +135,11 @@ class NormalModel(pl.LightningModule):
         acc = 100 * correct / total
         return acc
 
-    def training_step(self, batch, batch_idx, optimizer_idx):
+    def training_step(self, batch, batch_idx):
         x, y = batch
         y = y.cuda()
         scores, features = self.backbone(x.cuda())
-        loss = self._get_loss(scores, y)
+        loss = self._get_loss(scores, y, features)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -158,27 +160,19 @@ class NormalModel(pl.LightningModule):
         return acc
 
     def training_epoch_end(self, train_step_outputs):
-        total_loss = 0
-        for loss in train_step_outputs:
-            total_loss += sum([x['loss'] for x in loss])
+        total_loss = sum([x['loss'] for x in train_step_outputs])
         total_loss = total_loss / len(train_step_outputs)
         self.log("trn_loss", float(total_loss.cpu()))
 
     def validation_epoch_end(self, validation_step_outputs):
-        total_acc = 0
-        total_loss = 0
-        for acc, loss in validation_step_outputs:
-            total_acc += acc
-            total_loss += loss
+        total_acc, total_loss = map(sum, zip(*validation_step_outputs))
         total_acc = total_acc / len(validation_step_outputs)
         total_loss = total_loss / len(validation_step_outputs)
         self.log("val_acc", total_acc)
         self.log("val_loss", total_loss)
 
     def test_epoch_end(self, test_step_outputs):
-        total_acc = 0
-        for acc in test_step_outputs:
-            total_acc += acc
+        total_acc = sum([x for x in test_step_outputs])
         total_acc = total_acc / len(test_step_outputs)
         self.log("test_acc", total_acc)
 
@@ -189,21 +183,19 @@ class NormalModel(pl.LightningModule):
 
     def configure_optimizers(self):
         if self.cf.optimizer == "SGD":
-            optim_backbone = optim.SGD(self.backbone.parameters(),
+            optimizer = optim.SGD(self.backbone.parameters(),
                                        lr=self.cf.lr,
                                        momentum=self.cf.momentum,
                                        weight_decay=self.cf.wd)            
         elif self.cf.optimizer == "Adam":
-            optim_backbone = optim.Adam(self.backbone.parameters(),
+            optimizer = optim.Adam(self.backbone.parameters(),
                                         lr=self.cf.lr,
                                         weight_decay=self.cf.wd)
-        scheduler1 = lr_scheduler.MultiStepLR(
-                                        optim_backbone,
+        scheduler = lr_scheduler.MultiStepLR(
+                                        optimizer,
                                         milestones=self.cf.milestones,
                                         gamma=0.1)
-        optimizer = [optim_backbone]
-        scheduler = [scheduler1]
-        return optimizer, scheduler
+        return [optimizer], [scheduler]
 
 class LL4AL(NormalModel):
     """
@@ -239,7 +231,7 @@ class LL4AL(NormalModel):
         loss = backbone_loss + self.cf.weight * losspred_loss
         return loss
 
-    def training_step(self, batch, batch_idx, optimizer_idx):
+    def training_step(self, batch, batch_idx):
         x, y = batch
         y = y.cuda()
         scores, features = self.backbone(x.cuda())
@@ -263,30 +255,16 @@ class LL4AL(NormalModel):
 
     def configure_optimizers(self):
         if self.cf.optimizer == "SGD":
-            optim_backbone = optim.SGD(self.backbone.parameters(),
+            optimizer = optim.SGD(list(self.backbone.parameters()) + list(self.losspred.parameters()),
                                        lr=self.cf.lr,
                                        momentum=self.cf.momentum,
                                        weight_decay=self.cf.wd)
-            optim_losspred = optim.SGD(self.losspred.parameters(),
-                                       lr=self.cf.lr,
-                                       momentum=self.cf.lr,
-                                       weight_decay=self.cf.wd)
-            
         elif self.cf.optimizer == "Adam":
-            optim_backbone = optim.Adam(self.backbone.parameters(),
+            optimizer = optim.Adam(list(self.backbone.parameters()) + list(self.losspred.parameters()),
                                         lr=self.cf.lr,
                                         weight_decay=self.cf.wd)
-            optim_losspred = optim.Adam(self.losspred.parameters(),
-                                        lr=self.cf.lr,
-                                        weight_decay=self.cf.wd)
-        scheduler1 = lr_scheduler.MultiStepLR(
-                                        optim_backbone,
+        scheduler = lr_scheduler.MultiStepLR(
+                                        optimizer,
                                         milestones=self.cf.milestones,
                                         gamma=0.1)
-        scheduler2 = lr_scheduler.MultiStepLR(
-                                        optim_losspred,
-                                        milestones=self.cf.milestones,
-                                        gamma=0.1)
-        optimizer = [optim_backbone, optim_losspred]
-        scheduler = [scheduler1, scheduler2]
-        return optimizer, scheduler
+        return [optimizer], [scheduler]

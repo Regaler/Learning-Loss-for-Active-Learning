@@ -46,6 +46,8 @@ def get_config():
                         help="The num of AL cycle to query")
     parser.add_argument("--dataset", default="CIFAR10", type=str,
                         choices=["CIFAR10", "CIFAR100"])
+    parser.add_argument("--check_val_every_n_epoch", default=5, type=int,
+                        help="Do eval every n epoch")
     # model related
     parser.add_argument("--backbone", default="resnet18", type=str,
                         choices=["resnet18", "resnet34"])
@@ -105,10 +107,35 @@ def prepare_exp_result_dir(desc, dataset, trial):
     return outdir
 
 
-def get_uncertainty(trainer, model, unlabeled_loader):
-    predictions = trainer.predict(model, unlabeled_loader)
-    return torch.cat(predictions, dim=0).squeeze().cpu()
+def get_uncertainty(cf, trainer, model, unlabeled_loader):
+    """
+    Estimate the information / importance of the unlabeled samples
+    based on the querying strategy: cf.method
 
+    Parameters
+    ----------
+    trainer: pytorch_lightning.Trainer
+        The trainer to run inference
+    model: pytorch_lightning.LightningModule
+        The trained model
+    unlabeled_loader: torch.utils.data.DataLoader
+        The loader for the unlabeled set
+
+    Returns
+    -------
+    uncertainty: torch.Tensor, torch.Size([cf.subset])
+        The estimated uncertainty for the unlabeled samples
+    """
+    if cf.method == "LL4AL":
+        predictions = trainer.predict(model, unlabeled_loader)
+        uncertainty = torch.cat(predictions, dim=0).squeeze().cpu()
+    elif cf.method == "random":
+        uncertainty = list(range(cf.subset))
+        random.shuffle(uncertainty)
+        uncertainty = torch.Tensor(uncertainty)
+    else:
+        print(f"The method {cf.method} is not supported. ")
+    return uncertainty
 
 def query_unlabeled_samples(cf, labeled_set, unlabeled_set,
                             unlabeled_dataset, trainer, model):
@@ -149,9 +176,9 @@ def query_unlabeled_samples(cf, labeled_set, unlabeled_set,
                                   batch_size=cf.batch,
                                   sampler=SubsetSequentialSampler(subset),
                                   pin_memory=True)
-    uncertainty = get_uncertainty(trainer, model, unlabeled_loader)
-    # Index in ascending order
-    arg = np.argsort(uncertainty)
+    uncertainty = get_uncertainty(cf, trainer, model, unlabeled_loader)
+    # Index in ascending order, ex) tensor([2962, 672, 7841,  ..., 9392, 3257])
+    arg = np.argsort(uncertainty)  
     # Update the labeled dataset and the unlabeled dataset, respectively
     labeled_set += list(torch.tensor(subset)[arg][-cf.addendum:].numpy())
     unlabeled_set = list(torch.tensor(subset)[arg][:-cf.addendum].numpy()) + \
@@ -204,9 +231,11 @@ def run_AL_experiment(cf, logger, labeled_set, unlabeled_set,
             default_root_dir=exp_dir,
             callbacks=[checkpoint_callback,
                         lr_callback],
-            logger=logger
+            logger=logger,
+            check_val_every_n_epoch=cf.check_val_every_n_epoch
         )
         trainer.fit(model, train_loader, test_loader)
+        # trainer.fit(model, train_loader)
         res = trainer.test(model, test_loader)
         result.append(res[0]["test_acc"])  # append float value
 
@@ -272,13 +301,13 @@ if __name__ == '__main__':
 
         # Run typical AL experiment that gradually expands the dataset
         result = run_AL_experiment(
-                    cf,
-                    logger,
-                    labeled_set,
-                    unlabeled_set,
-                    train_loader,
-                    test_loader,
-                    model
+                    cf=cf,
+                    logger=logger,
+                    labeled_set=labeled_set,
+                    unlabeled_set=unlabeled_set,
+                    train_loader=train_loader,
+                    test_loader=test_loader,
+                    model=model
         )
         print(f"The result at {trial}-th trial is: {result}")
         with open(f"result_{trial}.txt", 'w') as f:
