@@ -11,7 +11,7 @@ import models.resnet as rn
 import config as cf
 
 
-def get_model(method, backbone, num_classes):
+def get_model(method, backbone, num_classes, optimizer):
     """
     Get the proper model
 
@@ -23,6 +23,8 @@ def get_model(method, backbone, num_classes):
         the name of the backbone
     num_classes: int
         the number of class
+    optimizer: str
+        the optimizer to use
 
     Returns
     -------
@@ -36,7 +38,7 @@ def get_model(method, backbone, num_classes):
     # Get the Lightning model
     if method == "LL4AL":
         losspred = LossNet()
-        model = LL4AL(resnet, losspred)
+        model = LL4AL(resnet, losspred, optimizer)
     else:
         raise ValueError(f"The policy {method} is not supported. ")
     return model
@@ -106,11 +108,12 @@ class LossNet(nn.Module):
 
 
 class LL4AL(pl.LightningModule):
-    def __init__(self, backbone, losspred):
+    def __init__(self, backbone, losspred, optimizer="SGD"):
         super().__init__()
         self.backbone = backbone
         self.losspred = losspred
         self.criterion = nn.CrossEntropyLoss(reduction='none')        
+        self.optim = optimizer
 
     def forward(self, x):
         # Predict the loss of a sample
@@ -204,22 +207,38 @@ class LL4AL(pl.LightningModule):
         return pred_loss
 
     def configure_optimizers(self):
-        optim_backbone = optim.SGD(self.backbone.parameters(), 
-                                    lr=cf.LR,
-                                    momentum=cf.MOMENTUM,
-                                    weight_decay=cf.WDECAY)
-        optim_losspred = optim.SGD(self.losspred.parameters(), 
-                                    lr=cf.LR,
-                                    momentum=cf.MOMENTUM,
-                                    weight_decay=cf.WDECAY)
-        scheduler1 = lr_scheduler.MultiStepLR(
-                                    optim_backbone, 
-                                    milestones=cf.MILESTONES, 
-                                    gamma=0.1)
-        scheduler2 = lr_scheduler.MultiStepLR(
-                                    optim_losspred, 
-                                    milestones=cf.MILESTONES, 
-                                    gamma=0.1)
+        if self.optim == "SGD":
+            optim_backbone = optim.SGD(self.backbone.parameters(), 
+                                        lr=cf.LR,
+                                        momentum=cf.MOMENTUM,
+                                        weight_decay=cf.WDECAY)
+            optim_losspred = optim.SGD(self.losspred.parameters(), 
+                                        lr=cf.LR,
+                                        momentum=cf.MOMENTUM,
+                                        weight_decay=cf.WDECAY)
+            scheduler1 = lr_scheduler.MultiStepLR(
+                                        optim_backbone, 
+                                        milestones=cf.MILESTONES, 
+                                        gamma=0.1)
+            scheduler2 = lr_scheduler.MultiStepLR(
+                                        optim_losspred, 
+                                        milestones=cf.MILESTONES, 
+                                        gamma=0.1)
+        elif self.optim == "Adam":
+            optim_backbone = optim.Adam(self.backbone.parameters(),
+                                        lr=cf.LR,
+                                        weight_decay=cf.WDECAY)
+            optim_losspred = optim.Adam(self.losspred.parameters(),
+                                        lr=cf.LR,
+                                        weight_decay=cf.WDECAY)
+            scheduler1 = lr_scheduler.MultiStepLR(
+                                        optim_backbone, 
+                                        milestones=cf.MILESTONES, 
+                                        gamma=0.1)
+            scheduler2 = lr_scheduler.MultiStepLR(
+                                        optim_losspred, 
+                                        milestones=cf.MILESTONES, 
+                                        gamma=0.1)
         optimizer = [optim_backbone, optim_losspred]
         scheduler = [scheduler1, scheduler2]
         return optimizer, scheduler

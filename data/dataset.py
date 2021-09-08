@@ -15,6 +15,7 @@ def get_dataset(name, train=True, download=True, transform="train"):
         elif transform == "test":
             trans = T.Compose([
                 T.ToTensor(),
+                T.Normalize([0.4914, 0.4822, 0.4465], [0.2023, 0.1994, 0.2010])
             ])
         # T.Normalize((0.5071, 0.4867, 0.4408), (0.2675, 0.2565, 0.2761)) # CIFAR-100
         return CIFAR10('../cifar10', train=train, download=download, transform=trans)

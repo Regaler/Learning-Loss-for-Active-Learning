@@ -164,11 +164,22 @@ if __name__ == '__main__':
         random.shuffle(indices)
         labeled_set = indices[:cf.ADDENDUM]
         unlabeled_set = indices[cf.ADDENDUM:]
-        train_loader = DataLoader(cifar10_train, batch_size=cf.BATCH,
-                                  sampler=SubsetRandomSampler(labeled_set),
-                                  pin_memory=True)
-        test_loader = DataLoader(cifar10_test, batch_size=cf.BATCH)
-        model = get_model(method="LL4AL", backbone="resnet18", num_classes=10)
+        train_loader = DataLoader(
+                            cifar10_train, 
+                            batch_size=cf.BATCH,
+                            sampler=SubsetRandomSampler(labeled_set),
+                            pin_memory=True
+                       )
+        test_loader = DataLoader(
+                            cifar10_test, 
+                            batch_size=cf.BATCH
+                      )
+        model = get_model(
+                    method="LL4AL", 
+                    backbone="resnet18", 
+                    num_classes=10, 
+                    optimizer="Adam"
+                )
         torch.backends.cudnn.benchmark = False
 
         # Run typical AL experiment that gradually expands the dataset
