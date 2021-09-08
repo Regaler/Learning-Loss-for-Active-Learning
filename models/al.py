@@ -1,6 +1,7 @@
 # pytorch
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torch.optim.lr_scheduler as lr_scheduler
 import torch.optim as optim
 import pytorch_lightning as pl
@@ -66,18 +67,6 @@ def LossPredLoss(input, target, margin=1.0, reduction='mean'):
         NotImplementedError()
     return loss
 
-
-'''Loss Prediction Module in PyTorch.
-
-Reference:
-[Yoo et al. 2019] Learning Loss for Active Learning
-(https://arxiv.org/abs/1905.03677)
-'''
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
-
-
 class LossNet(nn.Module):
     def __init__(self, feature_sizes=[32, 16, 8, 4],
                  num_channels=[64, 128, 256, 512], interm_dim=128):
@@ -141,7 +130,7 @@ class LL4AL(pl.LightningModule):
         y = y.cuda()
         scores, features = self.backbone(x.cuda())
         
-        if cf.EPOCH > cf.EPOCHL:
+        if self.current_epoch > cf.EPOCHL:
             # After 120 epochs, stop the gradient from the loss prediction
             # module propagated to the target model.
             features[0] = features[0].detach()
