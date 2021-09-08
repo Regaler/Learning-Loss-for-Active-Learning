@@ -108,7 +108,7 @@ class LossNet(nn.Module):
 class LL4AL(pl.LightningModule):
     """
     The Lightning class for LL4AL method
-    
+
     Parameters
     ----------
     backbone: nn.Module
@@ -128,6 +128,24 @@ class LL4AL(pl.LightningModule):
         pred_loss = self.losspred(x)
         return pred_loss
 
+    def _get_loss(self, scores, y, features):
+        # Calculate the losses. Predict the loss as well.
+        pred_loss = self.losspred(features)
+        pred_loss = pred_loss.view(pred_loss.size(0))
+        target_loss = self.criterion(scores, y)
+        backbone_loss = torch.sum(target_loss) / target_loss.size(0)
+        losspred_loss = LossPredLoss(pred_loss, target_loss,
+                                     margin=self.cf.margin)
+        loss = backbone_loss + self.cf.weight * losspred_loss
+        return loss
+
+    def _get_acc(self, scores, y):
+        _, preds = torch.max(scores.data, 1)
+        total = y.size(0)
+        correct = (preds == y).sum().item()
+        acc = 100 * correct / total
+        return acc
+
     def training_step(self, batch, batch_idx, optimizer_idx):
         x, y = batch
         y = y.cuda()
@@ -141,15 +159,25 @@ class LL4AL(pl.LightningModule):
             features[2] = features[2].detach()
             features[3] = features[3].detach()
 
-        # Calculate the losses. Predict the loss as well.
-        pred_loss = self.losspred(features)
-        pred_loss = pred_loss.view(pred_loss.size(0))
-        target_loss = self.criterion(scores, y)
-        backbone_loss = torch.sum(target_loss) / target_loss.size(0)
-        losspred_loss = LossPredLoss(pred_loss, target_loss, 
-                                    margin=self.cf.margin)
-        loss = backbone_loss + self.cf.weight * losspred_loss
+        loss = self._get_loss(scores, y, features)
         return loss
+
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        with torch.no_grad():
+            y = y.cuda()
+            scores, features = self.backbone(x.cuda())
+            acc = self._get_acc(scores, y)
+            loss = self._get_loss(scores, y, features)
+        return acc, loss
+
+    def test_step(self, batch, batch_idx):
+        x, y = batch
+        with torch.no_grad():
+            y = y.cuda()
+            scores, _ = self.backbone(x.cuda())
+            acc = self._get_acc(scores, y)
+        return acc
 
     def training_epoch_end(self, train_step_outputs):
         total_loss = 0
@@ -157,27 +185,6 @@ class LL4AL(pl.LightningModule):
             total_loss += sum([x['loss'] for x in loss])
         total_loss = total_loss / len(train_step_outputs)
         self.log("trn_loss", float(total_loss.cpu()))
-
-    def validation_step(self, batch, batch_idx):
-        x, y = batch
-        total = 0
-        correct = 0
-        with torch.no_grad():
-            y = y.cuda()
-            scores, features = self.backbone(x.cuda())
-            _, preds = torch.max(scores.data, 1)
-            total += y.size(0)
-            correct += (preds == y).sum().item()
-            # Get the losses
-            pred_loss = self.losspred(features)
-            pred_loss = pred_loss.view(pred_loss.size(0))
-            target_loss = self.criterion(scores, y)
-            backbone_loss = torch.sum(target_loss) / target_loss.size(0)
-            losspred_loss = LossPredLoss(pred_loss, target_loss,
-                                         margin=self.cf.margin)
-            loss = backbone_loss + self.cf.weight * losspred_loss
-        acc = 100 * correct / total
-        return acc, loss
 
     def validation_epoch_end(self, validation_step_outputs):
         total_acc = 0
@@ -189,19 +196,6 @@ class LL4AL(pl.LightningModule):
         total_loss = total_loss / len(validation_step_outputs)
         self.log("val_acc", total_acc)
         self.log("val_loss", total_loss)
-
-    def test_step(self, batch, batch_idx):
-        x, y = batch
-        total = 0
-        correct = 0
-        with torch.no_grad():
-            y = y.cuda()
-            scores, _ = self.backbone(x.cuda())
-            _, preds = torch.max(scores.data, 1)
-            total += y.size(0)
-            correct += (preds == y).sum().item()
-        acc = 100 * correct / total
-        return acc
 
     def test_epoch_end(self, test_step_outputs):
         total_acc = 0
@@ -252,4 +246,3 @@ class LL4AL(pl.LightningModule):
         optimizer = [optim_backbone, optim_losspred]
         scheduler = [scheduler1, scheduler2]
         return optimizer, scheduler
-
