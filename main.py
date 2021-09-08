@@ -309,6 +309,6 @@ if __name__ == '__main__':
                     test_loader=test_loader,
                     model=model
         )
-        print(f"The result at {trial}-th trial is: {result}")
-        with open(f"result_{trial}.txt", 'w') as f:
+        print(f"The result for {exp_dir} is {result}")
+        with open(f"result_{cf.method}_{trial}.txt", 'w') as f:
             f.write("\n".join([str(x) for x in result]))
