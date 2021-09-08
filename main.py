@@ -100,10 +100,10 @@ def get_config():
     return cf
 
 
-def prepare_exp_result_dir(desc, dataset, trial):
+def prepare_exp_result_dir(desc, dataset, trial, cycle):
     dateTimeObj = datetime.now()
     now = dateTimeObj.strftime("%d-%b-%Y-%H-%M-%S")
-    outdir = f"./result/{dataset}/{now}_{desc}_{trial}"
+    outdir = f"./result/{dataset}/{now}_{desc}_{trial}_{cycle}"
     return outdir
 
 
@@ -191,7 +191,7 @@ def query_unlabeled_samples(cf, labeled_set, unlabeled_set,
     return labeled_set, unlabeled_set, train_loader
 
 
-def run_AL_experiment(cf, logger, labeled_set, unlabeled_set,
+def run_AL_experiment(cf, labeled_set, unlabeled_set,
                       train_loader, test_loader, model):
     """
     Run typical AL experiment that gradually expands the dataset
@@ -216,12 +216,21 @@ def run_AL_experiment(cf, logger, labeled_set, unlabeled_set,
         This is used to draw performance curve
     """
     result = []  # performance by cycle
-    for _ in range(cf.cycles):
-        checkpoint_callback = ModelCheckpoint(monitor="val_acc",
+    checkpoint_callback = ModelCheckpoint(monitor="val_acc",
                                               save_last=True,
                                               save_top_k=1,
                                               mode='max')
-        lr_callback = LearningRateMonitor(logging_interval='epoch')
+    lr_callback = LearningRateMonitor(logging_interval='epoch')
+    for cycle in range(cf.cycles):
+        exp_dir = prepare_exp_result_dir(cf.desc, cf.dataset, 0, cycle)
+        logger = WandbLogger(
+            name=exp_dir,
+            project=cf.project,
+            entity=cf.entity,
+            offline=cf.offline,
+            group=cf.method)
+        logger.log_hyperparams(cf)
+
         trainer = pl.Trainer(
             gpus=torch.cuda.device_count(),
             accelerator='dp',
@@ -248,6 +257,7 @@ def run_AL_experiment(cf, logger, labeled_set, unlabeled_set,
                 unlabeled_dataset=dataset_unlabeled,
                 trainer=trainer,
                 model=model)
+        logger.experiment.finish()
     return result
 
 
@@ -273,13 +283,6 @@ if __name__ == '__main__':
     # AL is sensitive to the choice of initial labeled set
     # Therefore, do the experiment many times
     for trial in range(cf.trials):
-        exp_dir = prepare_exp_result_dir(cf.desc, cf.dataset, trial)
-        logger = WandbLogger(
-            name=exp_dir,
-            project=cf.project,
-            entity=cf.entity,
-            offline=cf.offline)
-        logger.log_hyperparams(cf)
         # Initialize a labeled dataset by randomly sampling K=ADDENDUM=1,000
         indices = list(range(cf.num_train))
         random.shuffle(indices)
@@ -296,19 +299,17 @@ if __name__ == '__main__':
                             batch_size=cf.batch
                       )
         model = get_model(cf, cf.method, cf.backbone)
-        logger.watch(model)
+        # logger.watch(model)
         torch.backends.cudnn.benchmark = False
 
         # Run typical AL experiment that gradually expands the dataset
         result = run_AL_experiment(
                     cf=cf,
-                    logger=logger,
                     labeled_set=labeled_set,
                     unlabeled_set=unlabeled_set,
                     train_loader=train_loader,
                     test_loader=test_loader,
                     model=model
         )
-        print(f"The result for {exp_dir} is {result}")
         with open(f"result_{cf.method}_{trial}.txt", 'w') as f:
             f.write("\n".join([str(x) for x in result]))
