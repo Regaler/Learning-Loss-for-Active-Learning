@@ -20,7 +20,7 @@ import pytorch_lightning as pl
 from pytorch_lightning.callbacks import ModelCheckpoint, LearningRateMonitor
 
 # Custom
-import config as cf
+# import config as cf
 from data.sampler import SubsetSequentialSampler
 from data.dataset import get_dataset
 from models.al import get_model
@@ -29,6 +29,61 @@ from models.al import get_model
 random.seed("Minuk Ma")
 torch.manual_seed(0)
 torch.backends.cudnn.deterministic = True
+
+
+def get_config():
+    parser = ArgumentParser()
+    # experiment-related
+    parser.add_argument("--desc", default="Dummy", type=str,
+                        help="The description of this experiment")
+    parser.add_argument("--method", default="LL4AL", type=str,
+                        choices=["random", "LL4AL"],
+                        help="The AL method for the experiment")
+    parser.add_argument("--trials", default=3, type=int,
+                        help="The num of trials to repeat to reduce variance")
+    parser.add_argument("--cycles", default=10, type=int,
+                        help="The num of AL cycle to query")
+    parser.add_argument("--dataset", default="CIFAR10", type=str,
+                        choices=["CIFAR10", "CIFAR100"])
+    # model related
+    parser.add_argument("--backbone", default="resnet18", type=str,
+                        choices=["resnet18", "resnet34"])
+    parser.add_argument("--margin", metavar="XI", default=1.0, type=float,
+                        help="The margin for the loss prediction module")
+    parser.add_argument("--weight", metavar="LAMBDA", default=1.0, type=float,
+                        help="loss weight for backbone vs loss prediction")
+    # learning related
+    parser.add_argument("--epoch", metavar="B", default=200, type=int,
+                        help="Num of epoch to run each training")
+    parser.add_argument("--batch", metavar="B", default=128, type=int,
+                        help="The batch size for training / val / test")
+    parser.add_argument('--optimizer', default='SGD', type=str,
+                        choices=["SGD", "Adam"])
+    parser.add_argument('--lr', default=0.1, type=float)
+    parser.add_argument('--momentum', default=0.9, type=float,
+                        help="momentum used for SGD optimizer")
+    parser.add_argument('--wd', default=5e-4, type=float,
+                        help="weight decay for the optimizer")
+    parser.add_argument('--milestones', nargs='+', default=[160],
+                        help='The parameter for StepLRScheduler')
+    parser.add_argument('--epochl', default=120, type=int,
+                        help="After this epoch, stop gradient from the loss \
+                            prediction module propagated to the target model")
+    parser.add_argument("--subset", metavar="M", default=10000, type=int,
+                        help="The number of unlabeled to consider at each cycle")
+    parser.add_argument("--addendum", metavar="K", default=1000, type=int,
+                        help="The number of samples to query at each cycle")
+
+    cf = parser.parse_args()
+    cf.milestones = [int(x) for x in cf.milestones]
+    if cf.dataset == "CIFAR10":
+        cf.num_train = 50000
+        cf.num_val = 50000 - cf.num_train
+        cf.num_classes = 10
+    elif cf.dataset == "CIFAR100":
+        cf.num_classes = 100
+        raise ValueError(f"Please get this info for {cf.dataset}")
+    return cf
 
 
 def prepare_exp_result_dir(desc, dataset, trial):
@@ -43,7 +98,7 @@ def get_uncertainty(trainer, model, unlabeled_loader):
     return torch.cat(predictions, dim=0).squeeze().cpu()
 
 
-def query_unlabeled_samples(labeled_set, unlabeled_set,
+def query_unlabeled_samples(cf, labeled_set, unlabeled_set,
                             unlabeled_dataset, trainer, model):
     """
     Get unlabeled samples to annotate for AL
@@ -75,29 +130,29 @@ def query_unlabeled_samples(labeled_set, unlabeled_set,
         The updated train loader with some more annotated data
     """
     random.shuffle(unlabeled_set)
-    subset = unlabeled_set[:cf.SUBSET]
+    subset = unlabeled_set[:cf.subset]
     # Create unlabeled dataloader for the unlabeled subset
     # more convenient if we maintain the order of subset for Sampler
     unlabeled_loader = DataLoader(unlabeled_dataset,
-                                  batch_size=cf.BATCH,
+                                  batch_size=cf.batch,
                                   sampler=SubsetSequentialSampler(subset),
                                   pin_memory=True)
     uncertainty = get_uncertainty(trainer, model, unlabeled_loader)
     # Index in ascending order
     arg = np.argsort(uncertainty)
     # Update the labeled dataset and the unlabeled dataset, respectively
-    labeled_set += list(torch.tensor(subset)[arg][-cf.ADDENDUM:].numpy())
-    unlabeled_set = list(torch.tensor(subset)[arg][:-cf.ADDENDUM].numpy()) + \
-        unlabeled_set[cf.SUBSET:]
+    labeled_set += list(torch.tensor(subset)[arg][-cf.addendum:].numpy())
+    unlabeled_set = list(torch.tensor(subset)[arg][:-cf.addendum].numpy()) + \
+        unlabeled_set[cf.subset:]
     # Create a new dataloader for the updated labeled dataset
     train_loader = DataLoader(dataset_train,
-                              batch_size=cf.BATCH,
+                              batch_size=cf.batch,
                               sampler=SubsetRandomSampler(labeled_set),
                               pin_memory=True)
     return labeled_set, unlabeled_set, train_loader
 
 
-def run_AL_experiment(labeled_set, unlabeled_set,
+def run_AL_experiment(cf, labeled_set, unlabeled_set,
                       train_loader, test_loader, model):
     """
     Run typical AL experiment that gradually expands the dataset
@@ -122,7 +177,7 @@ def run_AL_experiment(labeled_set, unlabeled_set,
         This is used to draw performance curve
     """
     result = []  # performance by cycle
-    for _ in range(cf.CYCLES):
+    for _ in range(cf.cycles):
         checkpoint_callback = ModelCheckpoint(monitor="val_acc",
                                               save_last=True,
                                               save_top_k=1,
@@ -131,7 +186,7 @@ def run_AL_experiment(labeled_set, unlabeled_set,
         trainer = pl.Trainer(
             gpus=torch.cuda.device_count(),
             accelerator='dp',
-            max_epochs=cf.EPOCH,
+            max_epochs=cf.epoch,
             accumulate_grad_batches=1,
             sync_batchnorm=True,
             default_root_dir=exp_dir,
@@ -145,6 +200,7 @@ def run_AL_experiment(labeled_set, unlabeled_set,
         # Annotate some unlabeled samples for active learning (AL)
         labeled_set, unlabeled_set, train_loader = \
             query_unlabeled_samples(
+                cf=cf,
                 labeled_set=labeled_set,
                 unlabeled_set=unlabeled_set,
                 unlabeled_dataset=dataset_unlabeled,
@@ -154,66 +210,50 @@ def run_AL_experiment(labeled_set, unlabeled_set,
 
 
 if __name__ == '__main__':
-    parser = ArgumentParser()
-    parser.add_argument("--desc", default="Dummy", type=str,
-                        help="The description of this experiment")
-    parser.add_argument("--method", default="LL4AL", type=str,
-                        choices=["random", "LL4AL"],
-                        help="The AL method for the experiment")
-    parser.add_argument("--dataset", default="CIFAR10", type=str,
-                        choices=["CIFAR10", "CIFAR100"])
-    parser.add_argument("--backbone", default="resnet18", type=str,
-                        choices=["resnet18", "resnet34"])
-    parser.add_argument('--optimizer', default='SGD', type=str,
-                        choices=["SGD", "Adam"])
-    args = parser.parse_args()
-
+    cf = get_config()
     # Data
     dataset_train = get_dataset(
-                        name=args.dataset,
+                        name=cf.dataset,
                         train=True,
                         download=True,
                         transform="train")
     dataset_unlabeled = get_dataset(
-                            name=args.dataset,
+                            name=cf.dataset,
                             train=True,
                             download=True,
                             transform="test")
     dataset_test = get_dataset(
-                        name=args.dataset,
+                        name=cf.dataset,
                         train=False,
                         download=True,
                         transform="test")
 
     # AL is sensitive to the choice of initial labeled set
     # Therefore, do the experiment many times
-    for trial in range(cf.TRIALS):
-        exp_dir = prepare_exp_result_dir(args.desc, args.dataset, trial)
+    for trial in range(cf.trials):
+        exp_dir = prepare_exp_result_dir(cf.desc, cf.dataset, trial)
         # Initialize a labeled dataset by randomly sampling K=ADDENDUM=1,000
-        indices = list(range(cf.NUM_TRAIN))
+        indices = list(range(cf.num_train))
         random.shuffle(indices)
-        labeled_set = indices[:cf.ADDENDUM]
-        unlabeled_set = indices[cf.ADDENDUM:]
+        labeled_set = indices[:cf.addendum]
+        unlabeled_set = indices[cf.addendum:]
         train_loader = DataLoader(
                             dataset_train,
-                            batch_size=cf.BATCH,
+                            batch_size=cf.batch,
                             sampler=SubsetRandomSampler(labeled_set),
                             pin_memory=True
                        )
         test_loader = DataLoader(
                             dataset_test,
-                            batch_size=cf.BATCH
+                            batch_size=cf.batch
                       )
-        model = get_model(
-                    method=args.method,
-                    backbone=args.backbone,
-                    num_classes=10,
-                    optimizer=args.optimizer
-                )
+        breakpoint()
+        model = get_model(cf, cf.method, cf.backbone)
         torch.backends.cudnn.benchmark = False
 
         # Run typical AL experiment that gradually expands the dataset
         result = run_AL_experiment(
+                    cf,
                     labeled_set,
                     unlabeled_set,
                     train_loader,

@@ -8,23 +8,19 @@ import pytorch_lightning as pl
 
 # custom
 import models.resnet as rn
-import config as cf
+# import config as cf
 
 
-def get_model(method, backbone, num_classes, optimizer):
+def get_model(cf, method, backbone):
     """
     Get the proper model
 
     Parameters
     ----------
     method: str
-        The active learning method to apply
+        The active learning method
     backbone: str
-        the name of the backbone
-    num_classes: int
-        the number of class
-    optimizer: str
-        the optimizer to use
+        The resnet backbone to use
 
     Returns
     -------
@@ -32,13 +28,13 @@ def get_model(method, backbone, num_classes, optimizer):
     """
     # Select the backbone
     if backbone == "resnet18":
-        resnet = rn.ResNet18(num_classes=num_classes)
+        resnet = rn.ResNet18(num_classes=cf.num_classes)
     else:
         raise ValueError(f"The backbone {backbone} is not supported. ")
     # Get the Lightning model
     if method == "LL4AL":
         losspred = LossNet()
-        model = LL4AL(resnet, losspred, optimizer)
+        model = LL4AL(cf, resnet, losspred)
     else:
         raise ValueError(f"The policy {method} is not supported. ")
     return model
@@ -110,12 +106,12 @@ class LossNet(nn.Module):
 
 
 class LL4AL(pl.LightningModule):
-    def __init__(self, backbone, losspred, optimizer="SGD"):
+    def __init__(self, cf, backbone, losspred):
         super().__init__()
         self.backbone = backbone
         self.losspred = losspred
         self.criterion = nn.CrossEntropyLoss(reduction='none')
-        self.optim = optimizer
+        self.cf = cf
 
     def forward(self, x):
         # Predict the loss of a sample
@@ -127,7 +123,7 @@ class LL4AL(pl.LightningModule):
         y = y.cuda()
         scores, features = self.backbone(x.cuda())
 
-        if self.current_epoch > cf.EPOCHL:
+        if self.current_epoch > self.cf.epochl:
             # After 120 epochs, stop the gradient from the loss prediction
             # module propagated to the target model.
             features[0] = features[0].detach()
@@ -140,8 +136,9 @@ class LL4AL(pl.LightningModule):
         pred_loss = pred_loss.view(pred_loss.size(0))
         target_loss = self.criterion(scores, y)
         backbone_loss = torch.sum(target_loss) / target_loss.size(0)
-        losspred_loss = LossPredLoss(pred_loss, target_loss, margin=cf.MARGIN)
-        loss = backbone_loss + cf.WEIGHT * losspred_loss
+        losspred_loss = LossPredLoss(pred_loss, target_loss, 
+                                    margin=self.cf.margin)
+        loss = backbone_loss + self.cf.weight * losspred_loss
         return loss
 
     def training_epoch_end(self, train_step_outputs):
@@ -167,8 +164,8 @@ class LL4AL(pl.LightningModule):
             target_loss = self.criterion(scores, y)
             backbone_loss = torch.sum(target_loss) / target_loss.size(0)
             losspred_loss = LossPredLoss(pred_loss, target_loss,
-                                         margin=cf.MARGIN)
-            loss = backbone_loss + cf.WEIGHT * losspred_loss
+                                         margin=self.cf.margin)
+            loss = backbone_loss + self.cf.weight * losspred_loss
         acc = 100 * correct / total
         return acc, loss
 
@@ -210,37 +207,37 @@ class LL4AL(pl.LightningModule):
         return pred_loss
 
     def configure_optimizers(self):
-        if self.optim == "SGD":
+        if self.cf.optimizer == "SGD":
             optim_backbone = optim.SGD(self.backbone.parameters(),
-                                       lr=cf.LR,
-                                       momentum=cf.MOMENTUM,
-                                       weight_decay=cf.WDECAY)
+                                       lr=self.cf.lr,
+                                       momentum=self.cf.momentum,
+                                       weight_decay=self.cf.wd)
             optim_losspred = optim.SGD(self.losspred.parameters(),
-                                       lr=cf.LR,
-                                       momentum=cf.MOMENTUM,
-                                       weight_decay=cf.WDECAY)
+                                       lr=self.cf.lr,
+                                       momentum=self.cf.lr,
+                                       weight_decay=self.cf.wd)
             scheduler1 = lr_scheduler.MultiStepLR(
                                         optim_backbone,
-                                        milestones=cf.MILESTONES,
+                                        milestones=self.cf.milestones,
                                         gamma=0.1)
             scheduler2 = lr_scheduler.MultiStepLR(
                                         optim_losspred,
-                                        milestones=cf.MILESTONES,
+                                        milestones=self.cf.milestones,
                                         gamma=0.1)
-        elif self.optim == "Adam":
+        elif self.cf.optimizer == "Adam":
             optim_backbone = optim.Adam(self.backbone.parameters(),
-                                        lr=cf.LR,
-                                        weight_decay=cf.WDECAY)
+                                        lr=self.cf.lr,
+                                        weight_decay=self.cf.wd)
             optim_losspred = optim.Adam(self.losspred.parameters(),
-                                        lr=cf.LR,
-                                        weight_decay=cf.WDECAY)
+                                        lr=self.cf.lr,
+                                        weight_decay=self.cf.wd)
             scheduler1 = lr_scheduler.MultiStepLR(
                                         optim_backbone,
-                                        milestones=cf.MILESTONES,
+                                        milestones=self.cf.milestones,
                                         gamma=0.1)
             scheduler2 = lr_scheduler.MultiStepLR(
                                         optim_losspred,
-                                        milestones=cf.MILESTONES,
+                                        milestones=self.cf.milestones,
                                         gamma=0.1)
         optimizer = [optim_backbone, optim_losspred]
         scheduler = [scheduler1, scheduler2]
