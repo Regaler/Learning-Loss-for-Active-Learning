@@ -220,14 +220,7 @@ class LL4AL(pl.LightningModule):
                                        lr=self.cf.lr,
                                        momentum=self.cf.lr,
                                        weight_decay=self.cf.wd)
-            scheduler1 = lr_scheduler.MultiStepLR(
-                                        optim_backbone,
-                                        milestones=self.cf.milestones,
-                                        gamma=0.1)
-            scheduler2 = lr_scheduler.MultiStepLR(
-                                        optim_losspred,
-                                        milestones=self.cf.milestones,
-                                        gamma=0.1)
+            
         elif self.cf.optimizer == "Adam":
             optim_backbone = optim.Adam(self.backbone.parameters(),
                                         lr=self.cf.lr,
@@ -235,11 +228,11 @@ class LL4AL(pl.LightningModule):
             optim_losspred = optim.Adam(self.losspred.parameters(),
                                         lr=self.cf.lr,
                                         weight_decay=self.cf.wd)
-            scheduler1 = lr_scheduler.MultiStepLR(
+        scheduler1 = lr_scheduler.MultiStepLR(
                                         optim_backbone,
                                         milestones=self.cf.milestones,
                                         gamma=0.1)
-            scheduler2 = lr_scheduler.MultiStepLR(
+        scheduler2 = lr_scheduler.MultiStepLR(
                                         optim_losspred,
                                         milestones=self.cf.milestones,
                                         gamma=0.1)
