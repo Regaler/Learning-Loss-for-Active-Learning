@@ -9,6 +9,7 @@ Reference:
 # Python
 import random
 import numpy as np
+from datetime import datetime
 
 # Torch
 import torch
@@ -27,6 +28,12 @@ from models.al import get_model
 random.seed("Minuk Ma")
 torch.manual_seed(0)
 torch.backends.cudnn.deterministic = True
+
+def prepare_exp_result_dir(desc):
+    dateTimeObj = datetime.now()
+    now = dateTimeObj.strftime("%d-%b-%Y-%H-%M-%S")
+    outdir = f"./result/cifar10/{now}_{desc}_{trial}"
+    return outdir
 
 
 def get_uncertainty(trainer, model, unlabeled_loader):
@@ -150,7 +157,8 @@ if __name__ == '__main__':
     # AL is sensitive to the choice of initial labeled set
     # Therefore, do the experiment many times
     for trial in range(cf.TRIALS):
-        exp_dir = f"./result/cifar10/train/trial_{trial}"
+        desc="DummyExp"
+        exp_dir = prepare_exp_result_dir(desc=f"{desc}_{trial}")
         # Initialize a labeled dataset by randomly sampling K=ADDENDUM=1,000
         indices = list(range(cf.NUM_TRAIN))
         random.shuffle(indices)

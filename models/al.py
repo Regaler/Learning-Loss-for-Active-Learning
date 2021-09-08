@@ -147,16 +147,12 @@ class LL4AL(pl.LightningModule):
         loss = backbone_loss + cf.WEIGHT * losspred_loss
         return loss
 
-    def train_epoch_end(self, train_step_outputs):
-        total_acc = 0
+    def training_epoch_end(self, train_step_outputs):
         total_loss = 0
-        for acc, loss in train_step_outputs:
-            total_acc += acc
-            total_loss += loss
-        total_acc = total_acc / len(train_step_outputs)
+        for loss in train_step_outputs:
+            total_loss += sum([x['loss'] for x in loss])
         total_loss = total_loss / len(train_step_outputs)
-        self.log("trn_acc", total_acc)
-        self.log("trn_loss", total_loss)
+        self.log("trn_loss", float(total_loss.cpu()))
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
