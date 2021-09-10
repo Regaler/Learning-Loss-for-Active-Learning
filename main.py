@@ -216,9 +216,9 @@ def run_AL_experiment(cf, labeled_set, unlabeled_set,
     """
     result = []  # performance by cycle
     checkpoint_callback = ModelCheckpoint(monitor="val_acc",
-                                              save_last=True,
-                                              save_top_k=1,
-                                              mode='max')
+                                          save_last=True,
+                                          save_top_k=1,
+                                          mode='max')
     lr_callback = LearningRateMonitor(logging_interval='epoch')
     for cycle in range(cf.cycles):
         exp_dir = prepare_exp_result_dir(cf.desc, cf.dataset, 0, cycle)
@@ -306,6 +306,7 @@ if __name__ == '__main__':
                 test_loader=test_loader,
                 model=model
     )
-    outfile = f"result_{cf.desc}_{cf.dataset}_{cf.method}.txt"
+    outfile = f"result_{cf.desc}_{cf.dataset}_\
+{cf.method}_{datetime.now().strftime('%b%d_%H-%M-%S')}.txt"
     with open(outfile, 'w') as f:
         f.write("\n".join([str(x) for x in result]))
