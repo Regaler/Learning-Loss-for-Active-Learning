@@ -40,8 +40,6 @@ def get_config():
     parser.add_argument("--method", default="LL4AL", type=str,
                         choices=["random", "LL4AL"],
                         help="The AL method for the experiment")
-    parser.add_argument("--trials", default=3, type=int,
-                        help="The num of trials to repeat to reduce variance")
     parser.add_argument("--cycles", default=10, type=int,
                         help="The num of AL cycle to query")
     parser.add_argument("--dataset", default="CIFAR10", type=str,
@@ -100,10 +98,10 @@ def get_config():
     return cf
 
 
-def prepare_exp_result_dir(desc, dataset, trial, cycle):
+def prepare_exp_result_dir(desc, dataset, cycle):
     dateTimeObj = datetime.now()
     now = dateTimeObj.strftime("%d-%b-%Y-%H-%M-%S")
-    outdir = f"./result/{dataset}/{now}_{desc}_{trial}_{cycle}"
+    outdir = f"./result/{dataset}/{now}_{desc}_{cycle}"
     return outdir
 
 
@@ -136,6 +134,7 @@ def get_uncertainty(cf, trainer, model, unlabeled_loader):
     else:
         print(f"The method {cf.method} is not supported. ")
     return uncertainty
+
 
 def query_unlabeled_samples(cf, labeled_set, unlabeled_set,
                             unlabeled_dataset, trainer, model):
@@ -178,7 +177,7 @@ def query_unlabeled_samples(cf, labeled_set, unlabeled_set,
                                   pin_memory=True)
     uncertainty = get_uncertainty(cf, trainer, model, unlabeled_loader)
     # Index in ascending order, ex) tensor([2962, 672, 7841,  ..., 9392, 3257])
-    arg = np.argsort(uncertainty)  
+    arg = np.argsort(uncertainty)
     # Update the labeled dataset and the unlabeled dataset, respectively
     labeled_set += list(torch.tensor(subset)[arg][-cf.addendum:].numpy())
     unlabeled_set = list(torch.tensor(subset)[arg][:-cf.addendum].numpy()) + \
@@ -280,36 +279,33 @@ if __name__ == '__main__':
                         download=True,
                         transform="test")
 
-    # AL is sensitive to the choice of initial labeled set
-    # Therefore, do the experiment many times
-    for trial in range(cf.trials):
-        # Initialize a labeled dataset by randomly sampling K=ADDENDUM=1,000
-        indices = list(range(cf.num_train))
-        random.shuffle(indices)
-        labeled_set = indices[:cf.addendum]
-        unlabeled_set = indices[cf.addendum:]
-        train_loader = DataLoader(
-                            dataset_train,
-                            batch_size=cf.batch,
-                            sampler=SubsetRandomSampler(labeled_set),
-                            pin_memory=True
-                       )
-        test_loader = DataLoader(
-                            dataset_test,
-                            batch_size=cf.batch
-                      )
-        model = get_model(cf, cf.method, cf.backbone)
-        # logger.watch(model)
-        torch.backends.cudnn.benchmark = False
+    # Initialize a labeled dataset by randomly sampling K=ADDENDUM=1,000
+    indices = list(range(cf.num_train))
+    random.shuffle(indices)
+    labeled_set = indices[:cf.addendum]
+    unlabeled_set = indices[cf.addendum:]
+    train_loader = DataLoader(
+                        dataset_train,
+                        batch_size=cf.batch,
+                        sampler=SubsetRandomSampler(labeled_set),
+                        pin_memory=True
+                    )
+    test_loader = DataLoader(
+                        dataset_test,
+                        batch_size=cf.batch
+                    )
+    model = get_model(cf, cf.method, cf.backbone)
+    torch.backends.cudnn.benchmark = False
 
-        # Run typical AL experiment that gradually expands the dataset
-        result = run_AL_experiment(
-                    cf=cf,
-                    labeled_set=labeled_set,
-                    unlabeled_set=unlabeled_set,
-                    train_loader=train_loader,
-                    test_loader=test_loader,
-                    model=model
-        )
-        with open(f"result_{cf.method}_{trial}.txt", 'w') as f:
-            f.write("\n".join([str(x) for x in result]))
+    # Run typical AL experiment that gradually expands the dataset
+    result = run_AL_experiment(
+                cf=cf,
+                labeled_set=labeled_set,
+                unlabeled_set=unlabeled_set,
+                train_loader=train_loader,
+                test_loader=test_loader,
+                model=model
+    )
+    outfile = f"result_{cf.desc}_{cf.dataset}_{cf.method}.txt"
+    with open(outfile, 'w') as f:
+        f.write("\n".join([str(x) for x in result]))
