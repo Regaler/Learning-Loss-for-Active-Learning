@@ -221,7 +221,7 @@ def run_AL_experiment(cf, labeled_set, unlabeled_set,
                                           mode='max')
     lr_callback = LearningRateMonitor(logging_interval='epoch')
     for cycle in range(cf.cycles):
-        exp_dir = prepare_exp_result_dir(cf.desc, cf.dataset, 0, cycle)
+        exp_dir = prepare_exp_result_dir(cf.desc, cf.dataset, cycle)
         logger = WandbLogger(
             name=exp_dir,
             project=cf.project,
