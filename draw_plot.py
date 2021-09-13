@@ -56,4 +56,4 @@ if __name__ == "__main__":
                         help='The paths to the result txt files')
     args = parser.parse_args()
     paths = args.result_paths[0].split(",")
-    draw(paths)
+    draw(paths, title=args.title)
